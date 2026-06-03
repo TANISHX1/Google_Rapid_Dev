@@ -1,8 +1,8 @@
-# 🏗️ System Architecture
+# AccessOps: System Architecture
 
-The **AccessOps** Agent utilizes a modern, event-driven Agentic workflow. Instead of using a traditional static pipeline, the system relies on an autonomous agent loop that observes the environment, plans a course of action, and executes tools recursively until the goal is achieved.
+AccessOps is designed as an autonomous, event-driven Multi-Agent Orchestrator using Node.js and Google's Gemini 2.5 Pro model. The system operates entirely in the background, listening to GitLab events and programmatically injecting code fixes for Accessibility, Security, and Performance without altering core business logic.
 
-## Core Flow
+Below is the high-level architecture detailing how the components interact.
 
 ```mermaid
 sequenceDiagram
@@ -54,14 +54,10 @@ sequenceDiagram
 ### 1. Webhook Router (`backend/routes/webhook.ts`)
 The entry point for the system. It listens for `open`, `update`, and `reopen` events from GitLab Merge Requests. It quickly acknowledges the payload (`202 Accepted`) to prevent GitLab timeouts, and asynchronously kicks off the agent workflow.
 
-### 2. Native Agent Service (`backend/services/agentService.ts`)
-The orchestrator of the agent loop. Instead of relying on a black-box cloud GUI or an unstable open-source MCP server, this service natively binds Google GenAI tools to standard REST API calls. 
+### 2. Custom MCP Interceptor (`backend/services/agentService.ts`)
+To comply with the hackathon rules, we utilize the official `@modelcontextprotocol/server-gitlab` open-source server. However, we discovered a bug in their implementation where the server returns invalid JSON schemas that violate the strict MCP 1.0 standard, causing Zod validation crashes.
 
-**Tools Exposed to Gemini:**
-- `get_mr_changes`: Discovers the scope of work.
-- `get_file_content`: Reads the source code in memory.
-- `update_file`: Applies the patched code back to the repository.
-- `leave_comment`: Provides audit transparency to the human developers.
+**The Engineering Fix:** Instead of abandoning the official server, we built a custom Node.js `TransportInterceptor`. This component sits between the standard MCP SDK and the child process, intercepting the raw JSON payload in real-time, injecting the missing `type: "object"` fields into the schemas, and then passing the sanitized data to our agent. This ensures 100% hackathon compliance while showcasing advanced systems engineering to overcome open-source limitations.
 
 ### 3. Model Orchestration (`@google/genai`)
 We use Gemini 2.5 Pro via Vertex AI. The model acts as the "brain", deciding which tools to call and in what order. Because we define strict schemas for the tools, the model consistently formats its outputs correctly, allowing our Node.js server to parse the instructions and execute the GitLab API calls flawlessly.

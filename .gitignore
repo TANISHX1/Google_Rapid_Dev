@@ -16,6 +16,8 @@ out/
 *.md
 !README.md
 !ARCHITECTURE.md
+!IMPLEMENTATION_GUIDE.md
+!AI_CONTEXT.md
 sample-test-code/
 
 # OS specific
