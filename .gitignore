@@ -15,6 +15,7 @@ out/
 # Planning & Documentation (Hackathon specifics)
 *.md
 !README.md
+!ARCHITECTURE.md
 sample-test-code/
 
 # OS specific
