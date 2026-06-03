@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+build/
+out/
+
+# Planning & Documentation (Hackathon specifics)
+*.md
+!README.md
+sample-test-code/
+
+# OS specific
+.DS_Store
+Thumbs.db
