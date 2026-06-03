@@ -1,11 +1,11 @@
-# ♿ A11y Agent Auto-Remediator
+# ♿ AccessOps
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)
 ![Google GenAI](https://img.shields.io/badge/Google-GenAI-orange.svg)
 ![GitLab](https://img.shields.io/badge/GitLab-Webhook-red.svg)
 
-**A11y Agent Auto-Remediator** is an intelligent, autonomous accessibility auditing and remediation bot built for the Google Rapid Dev Hackathon. 
+**AccessOps** is an intelligent, autonomous accessibility auditing and remediation bot built for the Google Rapid Dev Hackathon. 
 
 Whenever a developer opens a Merge Request in GitLab, this backend server intercepts the webhook, spins up a Gemini 2.5 Pro agent, and analyzes the modified code for WCAG 2.1 AA violations. The agent then autonomously writes the fixes and pushes a new commit directly to the Merge Request!
 

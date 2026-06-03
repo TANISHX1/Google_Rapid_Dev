@@ -1,6 +1,6 @@
 # 🏗️ System Architecture
 
-The **A11y Agent** utilizes a modern, event-driven Agentic workflow. Instead of using a traditional static pipeline, the system relies on an autonomous agent loop that observes the environment, plans a course of action, and executes tools recursively until the goal is achieved.
+The **AccessOps** Agent utilizes a modern, event-driven Agentic workflow. Instead of using a traditional static pipeline, the system relies on an autonomous agent loop that observes the environment, plans a course of action, and executes tools recursively until the goal is achieved.
 
 ## Core Flow
 
