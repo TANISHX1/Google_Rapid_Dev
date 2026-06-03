@@ -1,53 +1,184 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import dotenv from 'dotenv';
+import path from 'path';
+import { io } from '../server';
 
 dotenv.config();
 
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID || '';
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION?.trim() || 'us-central1';
-const AGENT_ID = process.env.GOOGLE_AGENT_ID || '';
 
-// Initialize Google GenAI using Application Default Credentials (set via gcloud auth)
 const ai = new GoogleGenAI({
     vertexai: true,
     project: PROJECT_ID,
     location: LOCATION,
 });
 
+function log(message: string) {
+    console.log(message);
+    io.emit('agent:log', message);
+}
+
+// Helper for GitLab API calls
+async function gitlabApi(path: string, method: string = 'GET', body?: any) {
+    const GITLAB_TOKEN = process.env.GITLAB_TOKEN || '';
+    const url = `https://gitlab.com/api/v4${path}`;
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'PRIVATE-TOKEN': GITLAB_TOKEN,
+            'Content-Type': 'application/json',
+        },
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    
+    if (!response.ok) {
+        throw new Error(`GitLab API error: ${response.statusText} on ${url}`);
+    }
+    return response.json();
+}
+
 /**
- * Triggers the Gemini 2.5 Pro agent workflow for a specific Merge Request.
- * @param projectId The GitLab project ID
- * @param mrId The GitLab Merge Request IID
+ * Triggers the Gemini 2.5 Pro agent workflow using the official MCP server + Native extensions.
  */
 export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
-    console.log(`[AgentService] Triggering Agent Workflow for Project: ${projectId}, MR: ${mrId}`);
+    log(`[Orchestrator] Triggering Multi-Agent Workflow for Project: ${projectId}, MR: ${mrId}`);
+
+    const transport = new StdioClientTransport({
+        command: 'node',
+        args: [path.join(__dirname, '..', 'utils', 'mcpWrapper.cjs')],
+        env: {
+            ...process.env,
+            GITLAB_PERSONAL_ACCESS_TOKEN: process.env.GITLAB_TOKEN,
+            GITLAB_API_URL: 'https://gitlab.com/api/v4'
+        }
+    });
+
+    const mcpClient = new Client({ name: 'accessops-orchestrator', version: '2.0.0' }, { capabilities: {} });
 
     try {
-        const prompt = `
-            You are an expert accessibility auditor.
-            A new Merge Request has been opened in GitLab (Project ID: ${projectId}, MR IID: ${mrId}).
-            Please use your connected GitLab MCP Server tools to:
-            1. Fetch the changed files for this Merge Request.
-            2. Analyze the code for WCAG 2.1 AA violations (missing alt tags, aria-labels, form labels, poor contrast, non-semantic HTML, missing lang attributes, missing landmark regions).
-            3. Generate the corrected code that fixes all violations while preserving the original business logic.
-            4. Use the GitLab MCP tool to push a new commit to the MR's source branch with the fixes.
-            5. Use the GitLab MCP tool to post a detailed comment on the MR listing every violation found and how it was fixed.
+        log('[Orchestrator] Pre-fetching MR changes to direct the agents...');
+        // Pre-fetch the MR to get the branch and modified files because the official MCP server lacks this tool
+        const mr: any = await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}`);
+        const changes: any = await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}/changes`);
+        const sourceBranch = mr.source_branch;
+        const modifiedFiles = changes.changes.map((c: any) => c.new_path).join(', ');
 
-            Begin the audit now.
-        `;
+        log('[Orchestrator] Connecting to Official GitLab MCP Server...');
+        await mcpClient.connect(transport);
+        
+        const mcpToolsList = await mcpClient.listTools();
+        
+        // Convert MCP Tools to Gemini function declarations
+        const geminiTools = mcpToolsList.tools.map(t => ({
+            name: t.name,
+            description: t.description || '',
+            parameters: t.inputSchema as any
+        }));
 
-        console.log('[AgentService] Sending prompt to Gemini 2.5 Pro...');
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: prompt,
+        // Add our custom native tool for leaving comments since the MCP server lacks it
+        geminiTools.push({
+            name: 'leave_mr_comment',
+            description: 'Leaves a comment on the Merge Request summarizing the fixes',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    comment: { type: Type.STRING, description: 'The markdown text of the comment' }
+                },
+                required: ['comment']
+            } as any
         });
 
-        const result = response.text;
-        console.log('[AgentService] Agent response full:', JSON.stringify(response, null, 2));
-        console.log('[AgentService] Agent response text:', result ? result.substring(0, 500) + '...' : 'No text returned');
+        const mcpToolMap = [{ functionDeclarations: geminiTools }];
+
+        const orchestratorPrompt = `You are the AccessOps Orchestrator Agent. 
+        A Merge Request was opened (Project ID: ${projectId}, MR IID: ${mrId}).
+        Branch: ${sourceBranch}
+        Modified Files: ${modifiedFiles}
+
+        You manage 3 sub-agents:
+        1. A11y Agent (Accessibility)
+        2. Security Agent (XSS, Secrets)
+        3. Performance Agent (React patterns)
+        
+        Using the provided tools, follow these exact steps:
+        1. For each modified file in the list above, use 'get_file_contents' to read it. Use branch: '${sourceBranch}' and project_id: '${projectId}'.
+        2. Analyze the code for all 3 sub-agent domains.
+        3. Use 'push_files' or 'create_or_update_file' to push the fully corrected code back to the branch. Do not remove existing logic.
+        4. Use 'leave_mr_comment' to leave a professional summary of all fixes applied on the MR.`;
+
+        const chat = ai.chats.create({
+            model: 'gemini-2.5-pro',
+            config: {
+                tools: mcpToolMap,
+                systemInstruction: orchestratorPrompt
+            }
+        });
+
+        log('[Orchestrator] Starting conversation with Gemini...');
+        let response = await chat.sendMessage({ message: 'Begin the multi-agent audit now.' });
+
+        // Agent Loop: Handle tool calls until the model is finished
+        while (response.functionCalls && response.functionCalls.length > 0) {
+            const call = response.functionCalls[0];
+            const args = call.args as any;
+            log(`[Orchestrator] Gemini called tool: ${call.name}`);
+
+            let result: any = { success: true };
+
+            try {
+                if (call.name === 'leave_mr_comment') {
+                    // Handle native extension tool
+                    await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}/notes`, 'POST', {
+                        body: args.comment
+                    });
+                    result = { output: 'Comment posted successfully.' };
+                } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
+                    // The official MCP server has a bug in its commit methods (throws reading 'map' error)
+                    // So we handle file commits natively!
+                    await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
+                        branch: args.branch || sourceBranch,
+                        commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
+                        actions: [{
+                            action: 'update',
+                            file_path: args.file_path || args.filePath,
+                            content: args.content || args.newContent
+                        }]
+                    });
+                    result = { output: 'File updated successfully.' };
+                } else {
+                    // Route the tool call to the MCP server
+                    const mcpResponse = await mcpClient.callTool({
+                        name: call.name,
+                        arguments: args
+                    });
+                    
+                    const contentArr = (mcpResponse.content || []) as any[];
+                    result = { output: contentArr.length > 0 ? contentArr.map(c => c.type === 'text' ? c.text : '').join('\n') : 'Success' };
+                }
+            } catch (err: any) {
+                log(`[Orchestrator] Tool ${call.name} failed: ${err.message}`);
+                result = { error: err.message };
+            }
+
+            log(`[Orchestrator] Sending result back to Gemini...`);
+            response = await chat.sendMessage({
+                message: [{
+                    functionResponse: {
+                        name: call.name,
+                        response: result
+                    }
+                }]
+            });
+        }
+
+        log('[Orchestrator] Multi-Agent workflow completed.');
 
     } catch (error) {
-        console.error('[AgentService] Error triggering Agent:', error);
+        log(`[Orchestrator] Error triggering Agent: ${error}`);
+    } finally {
+        await transport.close();
     }
 };
