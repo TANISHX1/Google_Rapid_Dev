@@ -5,48 +5,148 @@
 ---
 
 ## 1. Core Concept & The Hackathon Pivot
-**The Product:** AccessOps is an autonomous Multi-Agent Orchestrator designed to completely automate Accessibility (A11y), Security, and Performance code remediations. 
-**The Trigger:** When a developer opens a Merge Request in GitLab, the system intercepts the webhook, analyzes the code via Gemini 2.5 Pro, and pushes commits containing the fixed code directly back to the branch, finishing by leaving a review comment.
-**The Pivot:** Initially pitched as a simple accessibility bot, the project was pivoted to an "Enterprise Suite" featuring an Orchestrator that spawns multiple sub-agents, combined with a highly visual "God-Mode" React dashboard that streams the agent's live thought process via WebSockets.
+*   **The Product:** AccessOps is an autonomous Multi-Agent Orchestrator designed to completely automate Accessibility (A11y), Security, and Performance code remediations.
+*   **The Trigger:** When a developer opens, updates, or reopens a Merge Request (MR) in GitLab, the system intercepts the webhook, analyzes the code via Gemini 2.5 Pro (leveraging Vertex AI), and pushes commits containing the fixed code directly back to the branch, finishing by leaving a review comment.
+*   **The Pivot:** Initially pitched as a simple accessibility bot, the project was pivoted to an "Enterprise Suite" featuring an Orchestrator that spawns multiple sub-agents, combined with a highly visual "God-Mode" React dashboard that streams the agent's live thought process via WebSockets.
 
 ---
 
-## 2. Detailed Codebase Walkthrough (What has been built so far)
+## 2. Directory Structure & Codebase Map
 
-### Phase 1 is 100% Complete. Here is exactly how it works:
+Here is the full structural breakdown of the workspace:
+
+```
+Google_Rapid_Dev/
+├── AI_CONTEXT.md                 # This deep context document
+├── ARCHITECTURE.md               # Visual Mermaid sequence and high-level architecture
+├── IMPLEMENTATION_GUIDE.md       # Roadmap details for future phases
+├── README.md                     # Main setup & running instructions
+├── backend/
+│   ├── .env                      # Local environment variables configuration
+│   ├── config.json               # Dynamic user credentials registry
+│   ├── package.json              # Backend dependencies (express, socket.io, @google/genai, mcp-sdk)
+│   ├── tsconfig.json             # TypeScript configuration for commonjs targets
+│   ├── server.ts                 # Main server entrypoint (Express + Socket.io server)
+│   ├── routes/
+│   │   ├── webhook.ts            # GitLab webhook handler (Fast HTTP 202 acknowledgment)
+│   │   ├── gitlab.ts             # GitLab information fetching & commit diff endpoints
+│   │   └── integrations.ts       # Service connection and token configuration manager
+│   ├── services/
+│   │   └── agentService.ts       # Agent Orchestration Loop (Gemini client, Gitlab REST, MCP routing)
+│   └── utils/
+│       ├── config.ts             # Utility helper to load/save configurations dynamically
+│       └── mcpWrapper.cjs        # Interceptor to patch the GitLab MCP server Zod schemas
+└── frontend/
+    ├── .gitignore                # Node/Vite build system ignore paths
+    ├── index.html                # Vite entry html template
+    ├── package.json              # Frontend dependencies (react 19, vite 8, socket.io-client)
+    ├── vite.config.ts            # Vite React plugins configuration
+    ├── tsconfig.json             # Top level TypeScript reference config
+    ├── tsconfig.app.json         # TS compiler config for client app
+    ├── tsconfig.node.json        # TS compiler config for Vite node context
+    ├── eslint.config.js          # ESLint rules and lint configurations
+    └── src/
+        ├── main.tsx              # React mounting root script
+        ├── App.tsx               # Main frontend interface component (Live Terminal client)
+        ├── App.css               # Component specific layout rules
+        ├── index.css             # Glassmorphism dark mode styles and global styling
+        └── assets/               # Public assets / images
+```
+
+---
+
+## 3. Detailed Component Walkthrough
 
 ### A. The Backend (`backend/`)
 The backend is an event-driven Node.js/Express server written in TypeScript.
-- **`server.ts`:** Initializes the Express app and a `socket.io` server on port 3000. It handles CORS and serves as the primary entry point.
-- **`routes/webhook.ts`:** Listens for GitLab MR events (`X-Gitlab-Event: Merge Request Hook`). **CRITICAL DETAIL:** It immediately returns a `202 Accepted` status *before* awaiting the agent workflow. If you await the agent synchronously, GitLab will time out the webhook and disable it. It spawns the agent asynchronously.
-- **`utils/mcpWrapper.cjs`:** A custom interceptor. The official `@modelcontextprotocol/server-gitlab` has a Zod validation bug where it omits `type: "object"` in its JSON schemas. This CommonJS wrapper spawns the official server as a child process, intercepts its `stdout` stream, dynamically parses the JSON, injects the missing types, and outputs it. **Rule:** All MCP connections must use this wrapper.
-- **`services/agentService.ts`:** The heart of the Orchestrator. 
-  1. It pre-fetches the Merge Request changes using a native REST API call to GitLab (because the official MCP server lacks a tool for this).
-  2. It initializes the Gemini 2.5 Pro model and provides it with the MCP tools, explicitly injecting a custom native `leave_mr_comment` tool.
-  3. It executes a `while` loop, processing Gemini's tool calls and returning the MCP tool outputs until the agent is finished.
-  4. **CRITICAL DETAIL:** If Gemini tries to use `create_or_update_file` or `push_files`, the official MCP server crashes internally with a mapping error. `agentService.ts` intercepts these specific tool names and handles the code push natively via the GitLab REST API.
-  5. Throughout the loop, it calls `log()` which uses `io.emit('agent:log', message)` to stream real-time updates to the frontend.
+
+*   **`server.ts`:**
+    *   Initializes the Express application and attaches a native `socket.io` server on port 3000.
+    *   Supports CORS to allow connections from the Vite frontend (port 5173).
+    *   Exposes a `/health` endpoint for checks and registers webhooks/gitlab/integrations routes.
+    *   Exports the `io` instance to allow service files to broadcast events.
+
+*   **`routes/webhook.ts`:**
+    *   Exposes a `POST /` listener for GitLab webhook notifications.
+    *   Checks that the event is a Merge Request event (`payload.object_kind === 'merge_request'`).
+    *   **CRITICAL PATTERN:** If the MR action is `open`, `update`, or `reopen`, it immediately responds with `202 Accepted` containing `{ message: 'Merge Request event accepted. Processing...' }`. This satisfies GitLab's strict 10-second webhook response timeout limit.
+    *   Spawns `triggerAgentWorkflow(projectId, mrId)` in the background without blocking the HTTP response.
+
+*   **`routes/gitlab.ts`:**
+    *   Provides high-level workspace info via `/api/gitlab/info`. Pulls commits with `per_page=50` to support complete history.
+    *   Exposes `GET /api/gitlab/commit-diff/:sha` which compares a commit with its parent, fetches modified files, and returns file contents dynamically to power the code editor diff workflow.
+
+*   **`routes/integrations.ts`:**
+    *   Exposes `GET /api/integrations` and `POST /api/integrations/connect` to check status and dynamically bind GitLab configuration tokens and repository targets on-the-fly.
+
+*   **`utils/config.ts`:**
+    *   Manages reading and writing connections settings in a local `config.json` registry file to bypass nodemon reloads and make configuration updates live.
+
+*   **`utils/mcpWrapper.cjs`:**
+    *   The official `@modelcontextprotocol/server-gitlab` package contains a bug where some input schemas lack the `type: "object"` definition. Standard MCP SDK client Zod validations reject schemas without this property, crashing on initialization.
+    *   This wrapper process intercepts the MCP server's communications. It spawns the official server as a child process using `npx -y @modelcontextprotocol/server-gitlab`.
+    *   It redirects `stdin` and filters `stdout` in real-time. Whenever `"inputSchema":` is matched in the output streams, it parses the JSON chunk and programmatically injects `type: 'object'` into any schema lacking a `type` property, then forwards the modified chunk back to stdout.
+    *   All MCP client connections in the backend must execute their transport commands targeting this wrapper script.
+
+*   **`services/agentService.ts`:**
+    *   Manages the agent lifecycle, Gemini API configuration, and GitLab fallback APIs.
+    *   Uses `@google/genai` with Vertex AI backend capability enabled (`vertexai: true`) using the `gemini-2.5-pro` model.
+    *   **Pre-fetching Step:** Since the GitLab MCP server doesn't provide an API to fetch active changes for a specific MR, the service calls the GitLab REST API directly to extract the `source_branch` and the list of `modifiedFiles`.
+    *   **Tool Conversion:** Converts the retrieved MCP tool schemas into Gemini compatible tool declarations. It injects a native custom tool definition `leave_mr_comment` to comment directly on MR logs.
+    *   **Commit Fallback Logic:** The official GitLab MCP server's file writing/updating tools (`create_or_update_file` and `push_files`) throw mapping errors. The service intercepts these tool calls and executes them directly via GitLab's native commits API `/projects/${projectId}/repository/commits` using the commit action `update`.
+    *   **Streaming Logs:** Calls a custom `log()` function, which displays status lines in the terminal and emits an `agent:log` event through `socket.io` to keep the React client updated.
 
 ### B. The Frontend (`frontend/`)
-The frontend is a React application built with Vite and TailwindCSS (WIP).
-- **`src/App.tsx`:** Currently acts as a "Live Terminal". It connects to the backend via `socket.io-client` on port 3000. It listens for `agent:log` events and renders them in a scrolling, hacker-style terminal window.
-- **`src/index.css`:** Implements a premium "Glassmorphism" dark-mode aesthetic. 
+The client app is a React application built with Vite and styled via Vanilla CSS.
+
+*   **`src/App.tsx`:**
+    *   Connects to the Node backend using `socket.io-client` on `http://localhost:3000`.
+    *   Maintains a state array `logs` of strings, initialized with terminal starter lines.
+    *   Listens to the `agent:log` event to append new incoming logs to the interface.
+    *   Uses a React `useRef` pointing to the bottom of the logs panel to automatically scroll to new messages.
+    *   Includes conditional styling to highlight action lines (e.g. "Gemini called tool" or "Triggering Agent Workflow") in terminal green.
+    *   **Monaco Diff Editor Integration**: Selectable commit history feeds the Monaco Diff Editor to render exact file modifications dynamically retrieved from GitLab telemetry.
+    *   **Data Integrations Manager**: Populates a Settings button that triggers a glassmorphic dialog. Allows users to view and update active credentials and repository coordinates dynamically.
+
+*   **`src/index.css`:**
+    *   Uses standard CSS custom properties for defining a premium dark theme.
+    *   Applies fonts: `Outfit` (sans-serif for body/UI headers) and `JetBrains Mono` (for the log terminal).
+    *   Creates a sleek Glassmorphism aesthetic using translucent backgrounds (`rgba(30, 41, 59, 0.7)`), a subtle blur filter (`backdrop-filter: blur(12px)`), and a smooth cyan-blue glow shadow (`box-shadow: 0 0 20px rgba(56, 189, 248, 0.4)`).
+    *   Styles custom scrollbars and layout-isolated timelines to guarantee fluid grid alignment.
 
 ---
 
-## 3. Strict Development Rules for AI Agents
-1. **Never use standard `console.log()` in the agent loop.** Always use the custom `log()` function provided in `agentService.ts` so the frontend UI stays synced.
-2. **Never attempt to use the official MCP server directly.** Always route through `mcpWrapper.cjs`.
-3. **Do not alter the webhook immediate-return pattern.** GitLab requires a response within 10 seconds.
-4. **Maintain the Premium Aesthetic.** Any UI additions must follow the high-end, glassmorphism dark-mode theme.
+## 4. Environment Configuration
+
+To run the project, a `.env` file must be present in the `backend/` directory with the following variables:
+
+```env
+# GitLab authentication and workspace settings (falls back to these if config.json has no values)
+GITLAB_TOKEN=glpat-...                     # GitLab Personal Access Token with write API privileges
+GITLAB_PROJECT_ID=82852105                 # Default workspace project target ID
+
+# Google Cloud Platform credentials for Vertex AI SDK
+GOOGLE_CLOUD_PROJECT_ID=your_project_id    # GCP project hosting the Vertex AI APIs
+GOOGLE_CLOUD_LOCATION=us-central1          # GCP region where Gemini 2.5 Pro is deployed
+
+# Server configuration
+PORT=3000                                  # Express listening port
+```
+
+*   **Propagated Authentication:** The backend automatically maps `process.env.GITLAB_TOKEN` to `GITLAB_PERSONAL_ACCESS_TOKEN` when spawning the MCP server child process via `mcpWrapper.cjs`.
 
 ---
 
-## 4. Current Status & Immediate Next Steps
-**Status:** The Multi-Agent Orchestrator backend (Phase 1) is flawless, fully compliant with the hackathon rules, and gracefully handles all open-source bugs.
+## 5. Strict Development Rules for AI Agents
 
-**Next Immediate Step (Where you should start):** Phase 2 (The God-Mode Dashboard).
-The frontend needs to be upgraded from a simple streaming terminal into a visual control center.
-- You must install `@monaco-editor/react` to display live side-by-side code diffs of what the agent is fixing.
-- You must install `reactflow` to visually render the Orchestrator node delegating tasks to the sub-agent nodes.
-- Do NOT touch the backend architecture right now; it is stable. Focus strictly on `frontend/src/App.tsx` and building out the visual UI.
+1.  **Never use standard `console.log()` in the agent loop.** Always use the custom `log()` function provided in `agentService.ts` so the frontend UI stays synced.
+2.  **Never attempt to use the official MCP server directly.** Always route through `mcpWrapper.cjs`.
+3.  **Do not alter the webhook immediate-return pattern.** GitLab requires a response within 10 seconds. Always send the `202 Accepted` response before launching the workflow.
+4.  **Maintain the Premium Aesthetic.** Any UI additions must follow the high-end glassmorphism dark-mode theme, utilizing the established CSS tokens, Outfit, and JetBrains Mono fonts.
+
+---
+
+## 6. Current Status & Immediate Next Steps
+
+*   **Status:** The visual "God-Mode" Dashboard is complete. Monaco Diff Editors display dynamic SRE changes, timelines scroll seamlessly, and application connection scopes are managed dynamically in real-time.
+*   **Next Immediate Step:** Expand telemetry integrations and deploy the orchestrator to cloud environments.

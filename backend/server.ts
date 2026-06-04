@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import webhookRoutes from './routes/webhook';
+import gitlabRoutes from './routes/gitlab';
+import integrationsRoutes from './routes/integrations';
+
 
 // Load environment variables
 dotenv.config();
@@ -33,6 +36,8 @@ app.use(express.json()); // Parse JSON bodies (GitLab sends JSON)
 
 // API Routes
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/gitlab', gitlabRoutes);
+app.use('/api/integrations', integrationsRoutes);
 
 // Healthcheck endpoint
 app.get('/health', (req, res) => {
