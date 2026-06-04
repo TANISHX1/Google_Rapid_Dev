@@ -122,55 +122,61 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
 
         // Agent Loop: Handle tool calls until the model is finished
         while (response.functionCalls && response.functionCalls.length > 0) {
-            const call = response.functionCalls[0];
-            const args = call.args as any;
-            log(`[Orchestrator] Gemini called tool: ${call.name}`);
+            const functionResponses = [];
 
-            let result: any = { success: true };
+            // Process all parallel tool calls in the turn
+            for (const call of response.functionCalls) {
+                const args = call.args as any;
+                log(`[Orchestrator] Gemini called tool: ${call.name}`);
 
-            try {
-                if (call.name === 'leave_mr_comment') {
-                    // Handle native extension tool
-                    await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}/notes`, 'POST', {
-                        body: args.comment
-                    });
-                    result = { output: 'Comment posted successfully.' };
-                } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
-                    // The official MCP server has a bug in its commit methods (throws reading 'map' error)
-                    // So we handle file commits natively!
-                    await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
-                        branch: args.branch || sourceBranch,
-                        commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
-                        actions: [{
-                            action: 'update',
-                            file_path: args.file_path || args.filePath,
-                            content: args.content || args.newContent
-                        }]
-                    });
-                    result = { output: 'File updated successfully.' };
-                } else {
-                    // Route the tool call to the MCP server
-                    const mcpResponse = await mcpClient.callTool({
-                        name: call.name,
-                        arguments: args
-                    });
-                    
-                    const contentArr = (mcpResponse.content || []) as any[];
-                    result = { output: contentArr.length > 0 ? contentArr.map(c => c.type === 'text' ? c.text : '').join('\n') : 'Success' };
+                let result: any = { success: true };
+
+                try {
+                    if (call.name === 'leave_mr_comment') {
+                        // Handle native extension tool
+                        await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}/notes`, 'POST', {
+                            body: args.comment
+                        });
+                        result = { output: 'Comment posted successfully.' };
+                    } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
+                        // The official MCP server has a bug in its commit methods (throws reading 'map' error)
+                        // So we handle file commits natively!
+                        await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
+                            branch: args.branch || sourceBranch,
+                            commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
+                            actions: [{
+                                action: 'update',
+                                file_path: args.file_path || args.filePath,
+                                content: args.content || args.newContent
+                            }]
+                        });
+                        result = { output: 'File updated successfully.' };
+                    } else {
+                        // Route the tool call to the MCP server
+                        const mcpResponse = await mcpClient.callTool({
+                            name: call.name,
+                            arguments: args
+                        });
+                        
+                        const contentArr = (mcpResponse.content || []) as any[];
+                        result = { output: contentArr.length > 0 ? contentArr.map(c => c.type === 'text' ? c.text : '').join('\n') : 'Success' };
+                    }
+                } catch (err: any) {
+                    log(`[Orchestrator] Tool ${call.name} failed: ${err.message}`);
+                    result = { error: err.message };
                 }
-            } catch (err: any) {
-                log(`[Orchestrator] Tool ${call.name} failed: ${err.message}`);
-                result = { error: err.message };
-            }
 
-            log(`[Orchestrator] Sending result back to Gemini...`);
-            response = await chat.sendMessage({
-                message: [{
+                functionResponses.push({
                     functionResponse: {
                         name: call.name,
                         response: result
                     }
-                }]
+                });
+            }
+
+            log(`[Orchestrator] Sending results back to Gemini...`);
+            response = await chat.sendMessage({
+                message: functionResponses
             });
         }
 
