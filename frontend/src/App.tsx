@@ -70,14 +70,14 @@ function App() {
   const [gitlabInfo, setGitlabInfo] = useState<{
     user: { name: string; username: string; avatar_url: string };
     project: { name: string; default_branch: string };
-    commits: Array<{ sha: string; author: string; msg: string; date: string }>;
-    pipeline: { status: string; id: string | number };
+    commits: Array<{ sha: string; full_sha: string; author: string; msg: string; date: string; parent_ids: string[] }>;
+    pipeline: { status: string; id: string | number } | null;
     files: Array<{ id: string; name: string; path: string; type: string }>;
   }>({
     user: { name: 'Awaiting Connect', username: 'loading...', avatar_url: '' },
     project: { name: 'Repository Loading...', default_branch: 'main' },
     commits: [],
-    pipeline: { status: 'PENDING', id: 'N/A' },
+    pipeline: null,
     files: []
   });
 
@@ -376,8 +376,8 @@ function App() {
                     </div>
                     <div>
                       <strong>Pipeline Status</strong> 
-                      <span className="gitlab-badge-success" style={{ marginLeft: '4px' }}>
-                        {gitlabInfo.pipeline.status}
+                      <span className={gitlabInfo.pipeline?.status === 'SUCCESS' || gitlabInfo.pipeline?.status === 'RUNNING' ? 'gitlab-badge-success' : 'gitlab-badge-pending'} style={{ marginLeft: '4px' }}>
+                        {gitlabInfo.pipeline?.status || 'NO PIPELINE'}
                       </span>
                     </div>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', marginTop: '4px' }}>
@@ -386,51 +386,180 @@ function App() {
                   </div>
                 </div>
 
-                {/* Column 2: Commit History Timeline */}
+                {/* Column 2: Commit History Graph */}
                 <div className="gitlab-commit-timeline">
-                  <h4>Commit History Graph (Click to load diffs)</h4>
+                  <h4>Commit History Graph</h4>
                   <div className="commit-graph-container">
                     <div className="commit-list">
-                      {gitlabInfo.commits.map((c, index, arr) => {
-                        const isActive = selectedCommitSha === c.sha;
-                        return (
-                          <div 
-                            key={c.sha} 
-                            className={`commit-item ${isActive ? 'active' : ''}`}
-                            style={{ cursor: 'pointer' }}
-                            onClick={async () => {
-                              setSelectedCommitSha(c.sha);
-                              setShowDiffViewer(true);
-                              setCurrentDiff(null);
-                              try {
-                                const res = await fetch(`http://localhost:3000/api/gitlab/commit-diff/${c.sha}`);
-                                if (res.ok) {
-                                  const data = await res.json();
-                                  setCurrentDiff(data);
-                                }
-                              } catch (err) {
-                                console.error('Failed to load commit diff:', err);
+                      {(() => {
+                        // Compute branch lanes from parent relationships
+                        const commits = gitlabInfo.commits;
+                        if (!commits || commits.length === 0) {
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '48px 24px' }}>
+                              <p style={{ fontWeight: 600, color: 'var(--text-main)' }}>No commits found</p>
+                              <p style={{ fontSize: '0.7rem', marginTop: '4px' }}>Push code to your branch to populate the commit graph.</p>
+                            </div>
+                          );
+                        }
+                        const LANE_COLORS = ['#a663cc', '#00f2fe', '#2ecc71', '#e67e22', '#ff6b9d', '#ffd93d'];
+                        const LANE_W = 18;
+                        const NODE_R = 5;
+
+                        // Build lane assignment: each commit gets a lane (column index)
+                        // Simple algorithm: track active lanes, assign merge commits to existing lanes
+                        const shaToIndex = new Map<string, number>();
+                        commits.forEach((c, i) => shaToIndex.set(c.sha, i));
+
+                        const lanes: number[] = new Array(commits.length).fill(0);
+                        const activeLanes: (string | null)[] = []; // which sha occupies each lane
+
+                        for (let i = 0; i < commits.length; i++) {
+                          const c = commits[i];
+                          // Find if this commit is expected in an active lane
+                          let myLane = activeLanes.indexOf(c.sha);
+                          if (myLane === -1) {
+                            // New lane: find first free slot or add one
+                            const freeSlot = activeLanes.indexOf(null);
+                            if (freeSlot !== -1) {
+                              myLane = freeSlot;
+                            } else {
+                              myLane = activeLanes.length;
+                              activeLanes.push(null);
+                            }
+                          }
+                          lanes[i] = myLane;
+
+                          // First parent continues in our lane
+                          if (c.parent_ids.length > 0) {
+                            activeLanes[myLane] = c.parent_ids[0];
+                          } else {
+                            activeLanes[myLane] = null;
+                          }
+
+                          // Additional parents (merge sources) get their own lanes
+                          for (let p = 1; p < c.parent_ids.length; p++) {
+                            const parentSha = c.parent_ids[p];
+                            // Only assign a new lane if this parent isn't already tracked
+                            if (!activeLanes.includes(parentSha)) {
+                              const freeSlot = activeLanes.indexOf(null);
+                              if (freeSlot !== -1) {
+                                activeLanes[freeSlot] = parentSha;
+                              } else {
+                                activeLanes.push(parentSha);
                               }
-                            }}
-                          >
-                            <div className="commit-timeline-visual">
-                              <div className="timeline-line-top" style={{ opacity: index === 0 ? 0 : 1 }} />
-                              <div className={`timeline-node ${isActive ? 'active-node' : ''}`} />
-                              <div className="timeline-line-bottom" style={{ opacity: index === arr.length - 1 ? 0 : 1 }} />
-                            </div>
-                            <div className="commit-card-body">
-                              <div className="commit-meta" style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span className="commit-sha">{c.sha}</span>
-                                  <span className="commit-author" style={{ color: 'var(--text-muted)' }}>@{c.author}</span>
+                            }
+                          }
+                        }
+
+                        const maxLanes = Math.max(...lanes, 0) + 1;
+                        const svgW = maxLanes * LANE_W + 12;
+                        const ROW_H = 48;
+
+                        return commits.map((c, index) => {
+                          const isActive = selectedCommitSha === c.sha;
+                          const lane = lanes[index];
+                          const cx = lane * LANE_W + LANE_W / 2 + 4;
+                          const cy = ROW_H / 2;
+                          const color = LANE_COLORS[lane % LANE_COLORS.length];
+
+                          // Build SVG lines
+                          const svgLines: React.ReactNode[] = [];
+
+                          // Vertical line from previous commit to this node (same lane)
+                          if (index > 0) {
+                            // Find if any earlier commit has this as first parent → same lane continuation
+                            for (let prev = 0; prev < index; prev++) {
+                              const pc = commits[prev];
+                              if (pc.parent_ids[0] === c.sha) {
+                                const prevCx = lanes[prev] * LANE_W + LANE_W / 2 + 4;
+                                // Draw line from top of this row to this node
+                                if (lanes[prev] === lane) {
+                                  svgLines.push(
+                                    <line key={`v-${prev}`} x1={cx} y1={0} x2={cx} y2={cy - NODE_R}
+                                      stroke={color} strokeWidth={2} opacity={0.5} />
+                                  );
+                                } else {
+                                  // Merge line from different lane
+                                  svgLines.push(
+                                    <path key={`m-${prev}`}
+                                      d={`M ${prevCx} 0 C ${prevCx} ${cy * 0.6}, ${cx} ${cy * 0.4}, ${cx} ${cy - NODE_R}`}
+                                      stroke={LANE_COLORS[lanes[prev] % LANE_COLORS.length]}
+                                      strokeWidth={2} fill="none" opacity={0.4} />
+                                  );
+                                }
+                              }
+                              // Additional parent merge lines
+                              if (pc.parent_ids.includes(c.sha) && pc.parent_ids[0] !== c.sha) {
+                                const prevCx = lanes[prev] * LANE_W + LANE_W / 2 + 4;
+                                svgLines.push(
+                                  <path key={`mp-${prev}`}
+                                    d={`M ${prevCx} 0 C ${prevCx} ${cy * 0.5}, ${cx} ${cy * 0.5}, ${cx} ${cy - NODE_R}`}
+                                    stroke={LANE_COLORS[lanes[prev] % LANE_COLORS.length]}
+                                    strokeWidth={2} fill="none" opacity={0.35} strokeDasharray="4,3" />
+                                );
+                              }
+                            }
+                          }
+
+                          // Vertical line from node downward (if has children below)
+                          if (index < commits.length - 1) {
+                            const hasChildBelow = commits.slice(index + 1).some(
+                              (fc) => fc.parent_ids.includes(c.sha)
+                            );
+                            if (hasChildBelow) {
+                              svgLines.push(
+                                <line key="down" x1={cx} y1={cy + NODE_R} x2={cx} y2={ROW_H}
+                                  stroke={color} strokeWidth={2} opacity={0.4} />
+                              );
+                            }
+                          }
+
+                          return (
+                            <div
+                              key={c.sha}
+                              className={`commit-item ${isActive ? 'active' : ''}`}
+                              style={{ cursor: 'pointer', minHeight: ROW_H }}
+                              onClick={async () => {
+                                setSelectedCommitSha(c.sha);
+                                setShowDiffViewer(true);
+                                setCurrentDiff(null);
+                                try {
+                                  const res = await fetch(`http://localhost:3000/api/gitlab/commit-diff/${c.full_sha || c.sha}`);
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    setCurrentDiff(data);
+                                  }
+                                } catch (err) {
+                                  console.error('Failed to load commit diff:', err);
+                                }
+                              }}
+                            >
+                              <svg width={svgW} height={ROW_H} style={{ flexShrink: 0 }}>
+                                {svgLines}
+                                <circle cx={cx} cy={cy} r={isActive ? NODE_R + 2 : NODE_R}
+                                  fill={isActive ? color : '#09080d'}
+                                  stroke={color} strokeWidth={2}
+                                  style={{ filter: isActive ? `drop-shadow(0 0 6px ${color})` : 'none' }}
+                                />
+                              </svg>
+                              <div className="commit-card-body">
+                                <div className="commit-meta" style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span className="commit-sha">{c.sha}</span>
+                                    <span className="commit-author" style={{ color: 'var(--text-muted)' }}>@{c.author}</span>
+                                    {c.parent_ids.length > 1 && (
+                                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(166,99,204,0.15)', color: '#a663cc', fontWeight: 600 }}>MERGE</span>
+                                    )}
+                                  </div>
+                                  <div className="commit-message" title={c.msg} style={{ color: isActive ? 'var(--text-main)' : 'var(--text-muted)' }}>{c.msg}</div>
                                 </div>
-                                <div className="commit-message" title={c.msg} style={{ color: isActive ? 'var(--text-main)' : 'var(--text-muted)' }}>{c.msg}</div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '12px', whiteSpace: 'nowrap' }}>{c.date}</div>
                               </div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '12px' }}>{c.date}</div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
