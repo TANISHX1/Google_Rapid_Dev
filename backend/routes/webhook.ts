@@ -8,6 +8,15 @@ router.post('/', async (req: Request, res: Response) => {
     try {
         const payload = req.body;
 
+        // Webhook security: Validate X-Gitlab-Token if configured
+        const secretToken = process.env.GITLAB_WEBHOOK_SECRET;
+        const providedToken = req.headers['x-gitlab-token'];
+        
+        if (secretToken && providedToken !== secretToken) {
+            console.warn('[Webhook] Unauthorized access attempt: Invalid X-Gitlab-Token');
+            return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+        }
+
         // Verify it's a Merge Request event
         if (payload.object_kind !== 'merge_request') {
             return res.status(200).json({ message: 'Ignored: Not a Merge Request event.' });
@@ -21,6 +30,13 @@ router.post('/', async (req: Request, res: Response) => {
 
         // We only care about newly opened, updated, or reopened MRs
         if (action === 'open' || action === 'update' || action === 'reopen') {
+            // Layer 1: Skip if this webhook was triggered by our own commit
+            const lastCommitMsg = payload.object_attributes?.last_commit?.message || '';
+            if (lastCommitMsg.includes('AccessOps: Auto-Remediation')) {
+                console.log(`[Webhook] Skipping MR #${mrId}: triggered by AccessOps own commit (${lastCommitMsg.substring(0, 60)})`);
+                return res.status(200).json({ message: 'Skipped: Self-triggered webhook.' });
+            }
+
             // Acknowledge the webhook quickly so GitLab doesn't timeout
             res.status(202).json({ message: 'Merge Request event accepted. Processing...' });
 
