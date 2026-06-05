@@ -17,6 +17,7 @@ import {
   Settings
 } from 'lucide-react';
 import { RepoFileGraph } from './components/RepoFileGraph';
+import { LandingPage } from './components/LandingPage';
 import './index.css';
 
 // Socket connection
@@ -25,6 +26,7 @@ const socket = io('http://localhost:3000');
 // Dynamic source diffs are fetched in real-time from the GitLab API.
 
 function App() {
+  const [showLanding, setShowLanding] = useState(true);
   const [logs, setLogs] = useState<string[]>([
     'AccessOps Terminal Cockpit Initialized...',
     'Awaiting GitLab Webhook events or manual Trigger sequence...'
@@ -210,6 +212,10 @@ function App() {
   };
 
 
+
+  if (showLanding) {
+    return <LandingPage onLaunch={() => setShowLanding(false)} />;
+  }
 
   return (
     <div className="dashboard-container">
