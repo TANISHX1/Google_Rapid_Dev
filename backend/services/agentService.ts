@@ -64,7 +64,23 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
         const mr: any = await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}`);
         const changes: any = await gitlabApi(`/projects/${projectId}/merge_requests/${mrId}/changes`);
         const sourceBranch = mr.source_branch;
+        const mrSha = mr.sha || '';
         const modifiedFiles = changes.changes.map((c: any) => c.new_path).join(', ');
+
+        // Layer 2: Check latest commit on source branch to prevent re-processing our own commits
+        try {
+            const branchCommits = await gitlabApi(`/projects/${projectId}/repository/commits?ref_name=${encodeURIComponent(sourceBranch)}&per_page=1`) as any[];
+            if (branchCommits.length > 0) {
+                const latest = branchCommits[0];
+                const latestMsg = latest?.message || '';
+                if (latestMsg.includes('AccessOps: Auto-Remediation') && latest.id === mrSha) {
+                    log(`[Orchestrator] Skipping MR #${mrId}: latest commit SHA ${mrSha} matches AccessOps signature. No re-audit needed.`);
+                    return;
+                }
+            }
+        } catch (e) {
+            log('[Orchestrator] Warning: Could not verify latest commit, proceeding anyway.');
+        }
 
         log('[Orchestrator] Connecting to Official GitLab MCP Server...');
         await mcpClient.connect(transport);
@@ -98,13 +114,20 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
         Branch: ${sourceBranch}
         Modified Files: ${modifiedFiles}
 
+        ==== CRITICAL RULES - READ BEFORE ACTING ====
+        1. NEVER remove, modify, or break existing UI components, styling, CSS classes, animations, or non-vulnerable logic.
+        2. ONLY add or modify lines directly responsible for XSS, Accessibility (WCAG), or Performance violations.
+        3. If a file has no violations in your domain, leave it completely unchanged.
+        4. Always prefix commit messages with "AccessOps: Auto-Remediation".
+        ==============================================
+
         You manage 3 sub-agents:
         1. A11y Agent (Accessibility)
         2. Security Agent (XSS, Secrets)
         3. Performance Agent (React patterns)
         
         Using the provided tools, follow these exact steps:
-        1. For each modified file in the list above, use 'get_file_contents' to read it. Use branch: '${sourceBranch}' and project_id: '${projectId}'.
+        1. For each modified file in the list above, use 'get_file_contents' to read it. Use ref: '${sourceBranch}' and project_id: '${projectId}'.
         2. Analyze the code for all 3 sub-agent domains.
         3. Use 'push_files' or 'create_or_update_file' to push the fully corrected code back to the branch. Do not remove existing logic.
         4. Use 'leave_mr_comment' to leave a professional summary of all fixes applied on the MR.`;
@@ -138,12 +161,20 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                             body: args.comment
                         });
                         result = { output: 'Comment posted successfully.' };
+                    } else if (call.name === 'get_file_contents') {
+                        // The official MCP server also has a bug reading files (throws reading 'map' error)
+                        // So we handle file reading natively via GitLab API
+                        const encodedPath = encodeURIComponent(args.file_path || args.filePath);
+                        const ref = args.ref || sourceBranch;
+                        const fileData: any = await gitlabApi(`/projects/${projectId}/repository/files/${encodedPath}?ref=${ref}`);
+                        const decodedContent = Buffer.from(fileData.content, 'base64').toString('utf8');
+                        result = { output: decodedContent };
                     } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
                         // The official MCP server has a bug in its commit methods (throws reading 'map' error)
                         // So we handle file commits natively!
                         await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
                             branch: args.branch || sourceBranch,
-                            commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
+                            commit_message: `AccessOps: Auto-Remediation - ${args.commit_message || 'Automated fix'}`,
                             actions: [{
                                 action: 'update',
                                 file_path: args.file_path || args.filePath,
