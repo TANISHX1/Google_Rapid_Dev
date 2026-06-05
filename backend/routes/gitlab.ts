@@ -35,8 +35,8 @@ router.get('/info', async (req, res) => {
 
         // Fetch user, project, commits, pipeline, and repository tree in parallel
         const [user, project, commits, pipelines, tree] = await Promise.all([
-            gitlabApi('/user').catch(() => ({ username: 'blazex', name: 'blazex', avatar_url: '' })),
-            gitlabApi(`/projects/${projectId}`).catch(() => ({ name: 'seat-allocation-sys', default_branch: 'main' })),
+            gitlabApi('/user'),
+            gitlabApi(`/projects/${projectId}`),
             gitlabApi(`/projects/${projectId}/repository/commits?per_page=50`).catch(() => []),
             gitlabApi(`/projects/${projectId}/pipelines?per_page=1`).catch(() => []),
             gitlabApi(`/projects/${projectId}/repository/tree?recursive=true&per_page=100`).catch(() => [])
@@ -54,32 +54,29 @@ router.get('/info', async (req, res) => {
 
             return {
                 sha: c.id.substring(0, 7),
+                full_sha: c.id,
                 author: c.author_name,
                 msg: c.title,
-                date: timeAgo(c.committed_date)
+                date: timeAgo(c.committed_date),
+                parent_ids: (c.parent_ids || []).map((p: string) => p.substring(0, 7)),
             };
         });
 
         res.status(200).json({
             user: {
-                username: user.username || 'blazex',
-                name: user.name || 'blazex',
+                username: user.username,
+                name: user.name,
                 avatar_url: user.avatar_url || ''
             },
             project: {
-                name: project.name || 'seat-allocation-sys',
+                name: project.name,
                 default_branch: project.default_branch || 'main'
             },
-            commits: formattedCommits.length > 0 ? formattedCommits : [
-                { sha: '8f9a2b1', author: 'SRE-Agent', msg: 'fix: optimize useMemo hook for search filter', date: '2 min ago' },
-                { sha: '3c4d5e6', author: 'SRE-Agent', msg: 'security: patch input sanitization CVE-2026', date: '10 min ago' },
-                { sha: '7a8b9c0', author: 'SRE-Agent', msg: 'a11y: add descriptive aria-labels to buttons', date: '18 min ago' },
-                { sha: '1e2f3g4', author: 'blazex', msg: 'init: configure Official GitLab MCP Server', date: '1 hr ago' }
-            ],
+            commits: formattedCommits,
             pipeline: pipelines[0] ? {
                 status: pipelines[0].status.toUpperCase(),
                 id: pipelines[0].id
-            } : { status: 'SUCCESS', id: 'N/A' },
+            } : null,
             files: Array.isArray(tree) ? tree.map((f: any) => ({
                 id: f.id,
                 name: f.name,

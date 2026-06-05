@@ -107,6 +107,8 @@ The client app is a React application built with Vite and styled via Vanilla CSS
     *   Includes conditional styling to highlight action lines (e.g. "Gemini called tool" or "Triggering Agent Workflow") in terminal green.
     *   **Monaco Diff Editor Integration**: Selectable commit history feeds the Monaco Diff Editor to render exact file modifications dynamically retrieved from GitLab telemetry.
     *   **Data Integrations Manager**: Populates a Settings button that triggers a glassmorphic dialog. Allows users to view and update active credentials and repository coordinates dynamically.
+    *   **Branch-Aware Git Graph**: Visualizes the commit history as a true branching graph with SVG swimlanes, parent-child links, and merge annotations computed dynamically.
+    *   **Real Data Only**: Cleanly handles empty repository states and propagates authentic GitLab API errors to the user instead of silent mock fallbacks.
 
 *   **`src/index.css`:**
     *   Uses standard CSS custom properties for defining a premium dark theme.
@@ -142,11 +144,12 @@ PORT=3000                                  # Express listening port
 1.  **Never use standard `console.log()` in the agent loop.** Always use the custom `log()` function provided in `agentService.ts` so the frontend UI stays synced.
 2.  **Never attempt to use the official MCP server directly.** Always route through `mcpWrapper.cjs`.
 3.  **Do not alter the webhook immediate-return pattern.** GitLab requires a response within 10 seconds. Always send the `202 Accepted` response before launching the workflow.
-4.  **Maintain the Premium Aesthetic.** Any UI additions must follow the high-end glassmorphism dark-mode theme, utilizing the established CSS tokens, Outfit, and JetBrains Mono fonts.
+4.  **Always handle multiple parallel function calls in the loop.** Gemini models can invoke multiple tool calls concurrently (e.g. fetching content for multiple changed files). The orchestrator must collect all results and send them back to Gemini in a single response turn.
+5.  **Maintain the Premium Aesthetic.** Any UI additions must follow the high-end glassmorphism dark-mode theme, utilizing the established CSS tokens, Outfit, and JetBrains Mono fonts.
 
 ---
 
 ## 6. Current Status & Immediate Next Steps
 
-*   **Status:** The visual "God-Mode" Dashboard is complete. Monaco Diff Editors display dynamic SRE changes, timelines scroll seamlessly, and application connection scopes are managed dynamically in real-time.
+*   **Status:** The visual "God-Mode" Dashboard is complete. Monaco Diff Editors display dynamic SRE changes, timelines scroll seamlessly, and application connection scopes are managed dynamically in real-time. Commit history is plotted on a dynamic branch-aware graph. Parallel tool calls are supported natively.
 *   **Next Immediate Step:** Expand telemetry integrations and deploy the orchestrator to cloud environments.

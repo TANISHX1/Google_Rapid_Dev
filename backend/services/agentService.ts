@@ -127,7 +127,11 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
         3. Performance Agent (React patterns)
         
         Using the provided tools, follow these exact steps:
-        1. For each modified file in the list above, use 'get_file_contents' to read it. Use ref: '${sourceBranch}' and project_id: '${projectId}'.
+        1. For each modified file in the list above, use 'get_file_contents' to read it.
+           Crucial parameter rules for 'get_file_contents':
+           - Set 'project_id' to "${projectId}".
+           - Set 'ref' to "${sourceBranch}".
+           - Set 'file_path' to the exact path.
         2. Analyze the code for all 3 sub-agent domains.
         3. Use 'push_files' or 'create_or_update_file' to push the fully corrected code back to the branch. Do not remove existing logic.
         4. Use 'leave_mr_comment' to leave a professional summary of all fixes applied on the MR.`;
@@ -145,12 +149,11 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
 
         // Agent Loop: Handle tool calls until the model is finished
         while (response.functionCalls && response.functionCalls.length > 0) {
-            const functionResponses = [];
+            log(`[Orchestrator] Gemini requested ${response.functionCalls.length} tool call(s)`);
 
-            // Process all parallel tool calls in the turn
-            for (const call of response.functionCalls) {
+            const functionResponses = await Promise.all(response.functionCalls.map(async (call) => {
                 const args = call.args as any;
-                log(`[Orchestrator] Gemini called tool: ${call.name}`);
+                log(`[Orchestrator] Gemini calling tool: ${call.name} with args: ${JSON.stringify(args)}`);
 
                 let result: any = { success: true };
 
@@ -172,23 +175,43 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                     } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
                         // The official MCP server has a bug in its commit methods (throws reading 'map' error)
                         // So we handle file commits natively!
-                        await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
-                            branch: args.branch || sourceBranch,
-                            commit_message: `AccessOps: Auto-Remediation - ${args.commit_message || 'Automated fix'}`,
-                            actions: [{
+                        let commitActions = [];
+                        if (args.actions && Array.isArray(args.actions)) {
+                            commitActions = args.actions.map((act: any) => ({
+                                action: act.action || 'update',
+                                file_path: act.file_path || act.filePath,
+                                content: act.content || act.newContent
+                            }));
+                        } else {
+                            commitActions = [{
                                 action: 'update',
                                 file_path: args.file_path || args.filePath,
                                 content: args.content || args.newContent
-                            }]
+                            }];
+                        }
+
+                        await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
+                            branch: args.branch || args.ref || sourceBranch,
+                            commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
+                            actions: commitActions
                         });
-                        result = { output: 'File updated successfully.' };
+                        result = { output: 'Files committed successfully.' };
                     } else {
+                        // Normalize arguments for the MCP server
+                        const mcpArgs = { ...args };
+                        if (mcpArgs.project_id) {
+                            mcpArgs.project_id = String(mcpArgs.project_id);
+                        }
+                        if (mcpArgs.branch && !mcpArgs.ref) {
+                            mcpArgs.ref = mcpArgs.branch;
+                        }
+
                         // Route the tool call to the MCP server
                         const mcpResponse = await mcpClient.callTool({
                             name: call.name,
-                            arguments: args
+                            arguments: mcpArgs
                         });
-                        
+
                         const contentArr = (mcpResponse.content || []) as any[];
                         result = { output: contentArr.length > 0 ? contentArr.map(c => c.type === 'text' ? c.text : '').join('\n') : 'Success' };
                     }
@@ -197,17 +220,17 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                     result = { error: err.message };
                 }
 
-                functionResponses.push({
-                    functionResponse: {
-                        name: call.name,
-                        response: result
-                    }
-                });
-            }
+                return {
+                    name: call.name,
+                    response: result
+                };
+            }));
 
-            log(`[Orchestrator] Sending results back to Gemini...`);
+            log(`[Orchestrator] Sending responses back to Gemini...`);
             response = await chat.sendMessage({
-                message: functionResponses
+                message: functionResponses.map(fr => ({
+                    functionResponse: fr
+                }))
             });
         }
 
