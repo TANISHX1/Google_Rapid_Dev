@@ -9,6 +9,13 @@ function maskToken(token?: string): string {
     return `${token.substring(0, 6)}...${token.substring(token.length - 4)}`;
 }
 
+function maskEmail(email?: string): string {
+    if (!email) return '';
+    const at = email.indexOf('@');
+    if (at <= 1) return '****@' + email.split('@')[1];
+    return email[0] + '****@' + email.split('@')[1];
+}
+
 router.get('/', (req, res) => {
     try {
         const config = getIntegrationsConfig();
@@ -20,11 +27,22 @@ router.get('/', (req, res) => {
         const jiraToken = config.jira?.token || '';
         const slackToken = config.slack?.token || '';
 
+        const googleClientEmail = config.google?.clientEmail || '';
+        const googlePrivateKey = config.google?.privateKey || '';
+        const googleSheetId = config.google?.sheetId || '';
+        const googleDocId = config.google?.docId || '';
+
         res.status(200).json({
             gitlab: {
                 connected: !!(gitlabToken && gitlabProjectId),
                 token: maskToken(gitlabToken),
                 projectId: gitlabProjectId
+            },
+            google: {
+                connected: !!(googleClientEmail && googlePrivateKey),
+                clientEmail: maskEmail(googleClientEmail),
+                sheetId: googleSheetId,
+                docId: googleDocId
             },
             notion: {
                 connected: !!notionToken,
@@ -53,6 +71,14 @@ router.post('/connect', (req, res) => {
             config.gitlab = {
                 token: token || config.gitlab?.token || '',
                 projectId: projectId || config.gitlab?.projectId || ''
+            };
+        } else if (type === 'google') {
+            const { clientEmail, privateKey, sheetId, docId } = req.body;
+            config.google = {
+                clientEmail: clientEmail || config.google?.clientEmail || '',
+                privateKey: privateKey || config.google?.privateKey || '',
+                sheetId: sheetId || config.google?.sheetId || '',
+                docId: docId || config.google?.docId || ''
             };
         } else if (type === 'notion') {
             config.notion = { token };

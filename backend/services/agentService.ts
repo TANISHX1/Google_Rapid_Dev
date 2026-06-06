@@ -4,6 +4,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import dotenv from 'dotenv';
 import path from 'path';
 import { io } from '../server';
+import { logMetricsToSheet, generateComplianceReport } from './googleWorkspace';
 
 dotenv.config();
 
@@ -19,6 +20,10 @@ const ai = new GoogleGenAI({
 function log(message: string) {
     console.log(message);
     io.emit('agent:log', message);
+}
+
+function emitAgentEvent(event: string, data?: Record<string, any>) {
+    io.emit('agent:event', { event, data, timestamp: Date.now() });
 }
 
 // Helper for GitLab API calls
@@ -45,6 +50,12 @@ async function gitlabApi(path: string, method: string = 'GET', body?: any) {
  */
 export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
     log(`[Orchestrator] Triggering Multi-Agent Workflow for Project: ${projectId}, MR: ${mrId}`);
+    emitAgentEvent('workflow:start', { projectId, mrId });
+
+    const workflowStartTime = Date.now();
+    let filesRead = 0;
+    let filesWritten = 0;
+    let filesSkipped = 0;
 
     const transport = new StdioClientTransport({
         command: 'node',
@@ -154,6 +165,7 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
             const functionResponses = await Promise.all(response.functionCalls.map(async (call) => {
                 const args = call.args as any;
                 log(`[Orchestrator] Gemini calling tool: ${call.name} with args: ${JSON.stringify(args)}`);
+                emitAgentEvent('tool:call', { tool: call.name, args });
 
                 let result: any = { success: true };
 
@@ -167,6 +179,7 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                     } else if (call.name === 'get_file_contents') {
                         // The official MCP server also has a bug reading files (throws reading 'map' error)
                         // So we handle file reading natively via GitLab API
+                        filesRead++;
                         const encodedPath = encodeURIComponent(args.file_path || args.filePath);
                         const ref = args.ref || sourceBranch;
                         const fileData: any = await gitlabApi(`/projects/${projectId}/repository/files/${encodedPath}?ref=${ref}`);
@@ -175,6 +188,7 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                     } else if (call.name === 'create_or_update_file' || call.name === 'push_files') {
                         // The official MCP server has a bug in its commit methods (throws reading 'map' error)
                         // So we handle file commits natively!
+                        filesWritten++;
                         let commitActions = [];
                         if (args.actions && Array.isArray(args.actions)) {
                             commitActions = args.actions.map((act: any) => ({
@@ -215,8 +229,10 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                         const contentArr = (mcpResponse.content || []) as any[];
                         result = { output: contentArr.length > 0 ? contentArr.map(c => c.type === 'text' ? c.text : '').join('\n') : 'Success' };
                     }
+                    emitAgentEvent('tool:result', { tool: call.name, success: true, filePath: args?.file_path || args?.filePath || '' });
                 } catch (err: any) {
                     log(`[Orchestrator] Tool ${call.name} failed: ${err.message}`);
+                    emitAgentEvent('tool:error', { tool: call.name, error: err.message });
                     result = { error: err.message };
                 }
 
@@ -235,9 +251,37 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
         }
 
         log('[Orchestrator] Multi-Agent workflow completed.');
+        const elapsedHours = Math.round((Date.now() - workflowStartTime) / 3600000 * 10) / 10;
+        emitAgentEvent('workflow:complete', {
+            projectId,
+            mrId,
+            metrics: {
+                filesAnalyzed: filesRead,
+                filesFixed: filesWritten,
+                filesSkipped,
+                timeSaved: Math.max(0.5, Math.round(filesWritten * 0.5 * 10) / 10),
+                tokensSaved: Math.round((filesRead * 0.8 + filesWritten * 1.2) * 10) / 10,
+                elapsedSeconds: Math.round((Date.now() - workflowStartTime) / 1000)
+            }
+        });
+
+        // Google Workspace integration: log metrics to Sheets and generate a compliance report
+        const metrics = {
+            filesAnalyzed: filesRead,
+            filesFixed: filesWritten,
+            timeSaved: Math.max(0.5, Math.round(filesWritten * 0.5 * 10) / 10),
+            tokensSaved: Math.round((filesRead * 0.8 + filesWritten * 1.2) * 10) / 10
+        };
+        logMetricsToSheet(projectId, mrId, metrics).then(url => {
+            if (url) log(`[Orchestrator] Metrics logged to Google Sheets: ${url}`);
+        });
+        generateComplianceReport(projectId, mrId, metrics).then(url => {
+            if (url) log(`[Orchestrator] Compliance report: ${url}`);
+        });
 
     } catch (error) {
         log(`[Orchestrator] Error triggering Agent: ${error}`);
+        emitAgentEvent('workflow:error', { error: String(error) });
     } finally {
         await transport.close();
     }

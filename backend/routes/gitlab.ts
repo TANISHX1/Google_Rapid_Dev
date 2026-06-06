@@ -44,12 +44,15 @@ router.get('/info', async (req, res) => {
 
         const formattedCommits = commits.map((c: any) => {
             const timeAgo = (dateStr: string) => {
-                const diff = Date.now() - new Date(dateStr).getTime();
+                if (!dateStr) return '—';
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return '—';
+                const diff = Date.now() - date.getTime();
                 const mins = Math.floor(diff / 60000);
                 if (mins < 60) return `${mins} min ago`;
                 const hrs = Math.floor(mins / 60);
                 if (hrs < 24) return `${hrs} hr ago`;
-                return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
             };
 
             return {
