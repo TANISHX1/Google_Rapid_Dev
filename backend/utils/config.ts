@@ -8,6 +8,12 @@ export interface IntegrationsConfig {
         token?: string;
         projectId?: string;
     };
+    google?: {
+        clientEmail?: string;
+        privateKey?: string;
+        sheetId?: string;
+        docId?: string;
+    };
     notion?: {
         token?: string;
     };
