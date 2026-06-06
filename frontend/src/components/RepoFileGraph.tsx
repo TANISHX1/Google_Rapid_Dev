@@ -24,6 +24,7 @@ interface Edge {
 
 interface RepoFileGraphProps {
   files?: FileItem[];
+  visible?: boolean;
 }
 
 const DEFAULT_FILES: FileItem[] = [
@@ -41,12 +42,13 @@ const DEFAULT_FILES: FileItem[] = [
   { id: '12', name: 'gitlab.ts', path: 'backend/routes/gitlab.ts', type: 'blob' }
 ];
 
-export function RepoFileGraph({ files = [] }: RepoFileGraphProps) {
+export function RepoFileGraph({ files = [], visible = true }: RepoFileGraphProps) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   
+  const nodesRef = useRef<Node[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const draggedNodeIdRef = useRef<string | null>(null);
 
@@ -123,99 +125,102 @@ export function RepoFileGraph({ files = [] }: RepoFileGraphProps) {
     setEdges(parsedEdges);
   }, [files]);
 
-  // Keep ref updated to coordinate drag safety inside physics loop
-  useEffect(() => {
-    draggedNodeIdRef.current = draggedNodeId;
-  }, [draggedNodeId]);
+  // Keep refs updated for use inside physics loop
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { draggedNodeIdRef.current = draggedNodeId; }, [draggedNodeId]);
 
-  // Physics animation tick
+  // Physics simulation: runs when visible and nodes exist, stops when settled
   useEffect(() => {
-    if (nodes.length === 0) return;
+    if (!visible || nodes.length === 0) return;
 
     let animFrameId: number;
+    let settledFrames = 0;
+    const SETTLE_VEL = 0.04;
+    const SETTLE_FRAMES = 30;
 
-    const updatePhysics = () => {
-      setNodes((prevNodes) => {
-        if (prevNodes.length === 0) return prevNodes;
+    const tick = () => {
+      const prevNodes = nodesRef.current;
+      if (prevNodes.length === 0) return;
 
-        // Dampen existing velocities
-        const nextNodes = prevNodes.map((n) => ({ ...n, vx: n.vx * 0.82, vy: n.vy * 0.82 }));
-        const kAttract = 0.045;
-        const kRepel = 1800; // Increased repulsion to spread nodes further apart
-        const kGravity = 0.012;
-        const center = { x: 450, y: 340 };
+      const nextNodes = prevNodes.map((n) => ({ ...n, vx: n.vx * 0.82, vy: n.vy * 0.82 }));
+      const kAttract = 0.045;
+      const kRepel = 1800;
+      const kGravity = 0.012;
+      const center = { x: 450, y: 340 };
 
-        // 1. Repel nodes
-        for (let i = 0; i < nextNodes.length; i++) {
-          for (let j = i + 1; j < nextNodes.length; j++) {
-            const n1 = nextNodes[i];
-            const n2 = nextNodes[j];
-            const dx = n2.x - n1.x;
-            const dy = n2.y - n1.y;
-            const distSq = dx * dx + dy * dy + 0.1;
-            const dist = Math.sqrt(distSq);
-            if (dist < 250) {
-              const force = kRepel / distSq;
-              const fx = (dx / dist) * force;
-              const fy = (dy / dist) * force;
-              nextNodes[i].vx -= fx;
-              nextNodes[i].vy -= fy;
-              nextNodes[j].vx += fx;
-              nextNodes[j].vy += fy;
-            }
-          }
-        }
-
-        // 2. Attract connected node pairs
-        edges.forEach((edge) => {
-          const idx1 = nextNodes.findIndex((n) => n.id === edge.source);
-          const idx2 = nextNodes.findIndex((n) => n.id === edge.target);
-          if (idx1 !== -1 && idx2 !== -1) {
-            const n1 = nextNodes[idx1];
-            const n2 = nextNodes[idx2];
-            const dx = n2.x - n1.x;
-            const dy = n2.y - n1.y;
-            const dist = Math.sqrt(dx * dx + dy * dy + 0.1);
-            const restLength = n1.type === 'dir' && n2.type === 'dir' ? 120 : 90; // Spaced nodes further apart
-            const force = kAttract * (dist - restLength);
+      // 1. Repel all pairs
+      for (let i = 0; i < nextNodes.length; i++) {
+        for (let j = i + 1; j < nextNodes.length; j++) {
+          const n1 = nextNodes[i];
+          const n2 = nextNodes[j];
+          const dx = n2.x - n1.x;
+          const dy = n2.y - n1.y;
+          const distSq = dx * dx + dy * dy + 0.1;
+          const dist = Math.sqrt(distSq);
+          if (dist < 250) {
+            const force = kRepel / distSq;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
-            nextNodes[idx1].vx += fx;
-            nextNodes[idx1].vy += fy;
-            nextNodes[idx2].vx -= fx;
-            nextNodes[idx2].vy -= fy;
+            nextNodes[i].vx -= fx;
+            nextNodes[i].vy -= fy;
+            nextNodes[j].vx += fx;
+            nextNodes[j].vy += fy;
           }
-        });
+        }
+      }
 
-        // 3. Apply gravity and integrate
-        return nextNodes.map((n) => {
-          if (n.id === draggedNodeIdRef.current) return n;
-
-          const gdx = center.x - n.x;
-          const gdy = center.y - n.y;
-          const vx = n.vx + gdx * kGravity;
-          const vy = n.vy + gdy * kGravity;
-
-          const speed = Math.sqrt(vx * vx + vy * vy);
-          const maxSpeed = 8;
-          const scale = speed > maxSpeed ? maxSpeed / speed : 1;
-
-          return {
-            ...n,
-            vx: vx * scale,
-            vy: vy * scale,
-            x: Math.max(100, Math.min(n.x + vx * scale, 800)),
-            y: Math.max(40, Math.min(n.y + vy * scale, 680))
-          };
-        });
+      // 2. Attract connected pairs
+      edges.forEach((edge) => {
+        const s = nextNodes.findIndex((n) => n.id === edge.source);
+        const t = nextNodes.findIndex((n) => n.id === edge.target);
+        if (s !== -1 && t !== -1) {
+          const n1 = nextNodes[s], n2 = nextNodes[t];
+          const dx = n2.x - n1.x, dy = n2.y - n1.y;
+          const dist = Math.sqrt(dx * dx + dy * dy + 0.1);
+          const rest = n1.type === 'dir' && n2.type === 'dir' ? 120 : 90;
+          const force = kAttract * (dist - rest);
+          const fx = (dx / dist) * force, fy = (dy / dist) * force;
+          nextNodes[s].vx += fx; nextNodes[s].vy += fy;
+          nextNodes[t].vx -= fx; nextNodes[t].vy -= fy;
+        }
       });
 
-      animFrameId = requestAnimationFrame(updatePhysics);
+      // 3. Gravity + integration, compute max velocity for equilibrium check
+      let maxVel = 0;
+      for (const n of nextNodes) {
+        if (n.id === draggedNodeIdRef.current) continue;
+        const gdx = center.x - n.x;
+        const gdy = center.y - n.y;
+        const vx = n.vx + gdx * kGravity;
+        const vy = n.vy + gdy * kGravity;
+        const speed = Math.sqrt(vx * vx + vy * vy);
+        const scale = speed > 8 ? 8 / speed : 1;
+        n.vx = vx * scale;
+        n.vy = vy * scale;
+        n.x = Math.max(100, Math.min(n.x + n.vx, 800));
+        n.y = Math.max(40, Math.min(n.y + n.vy, 680));
+        maxVel = Math.max(maxVel, speed * scale);
+      }
+
+      // Equilibrium: stop after enough consecutive low-velocity frames
+      if (maxVel < SETTLE_VEL) {
+        settledFrames++;
+        if (settledFrames >= SETTLE_FRAMES) {
+          setNodes(nextNodes);
+          return; // stop the RAF loop
+        }
+      } else {
+        settledFrames = 0;
+      }
+
+      setNodes(nextNodes);
+      animFrameId = requestAnimationFrame(tick);
     };
 
-    animFrameId = requestAnimationFrame(updatePhysics);
+    animFrameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animFrameId);
-  }, [edges, nodes.length]);
+  }, [edges, nodes.length, visible]);
+
 
   // Calculate dynamic bounding box values to center and auto-zoom the viewBox around the nodes
   let minX = 350, maxX = 550, minY = 240, maxY = 440;
