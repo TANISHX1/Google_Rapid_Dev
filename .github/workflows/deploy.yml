@@ -50,6 +50,7 @@ jobs:
           env_vars: |
             GITLAB_TOKEN=${{ secrets.GITLAB_TOKEN }}
             GITLAB_PROJECT_ID=82836759
+            GOOGLE_CLOUD_PROJECT_ID=${{ env.PROJECT_ID }}
           flags: '--allow-unauthenticated'
 
       - name: Build and Push Frontend
