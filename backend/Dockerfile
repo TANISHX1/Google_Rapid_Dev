@@ -17,8 +17,11 @@ RUN npm install
 # Copy the rest of the backend source code
 COPY . .
 
+# Build the TypeScript code
+RUN npm run build
+
 # Expose the Express / Socket.io port
 EXPOSE 3000
 
-# Start the server using your package.json start script (ts-node server.ts)
-CMD ["npm", "run", "start"]
+# Start the server natively using Node
+CMD ["npm", "run", "start:prod"]
