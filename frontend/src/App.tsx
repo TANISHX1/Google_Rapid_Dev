@@ -217,7 +217,7 @@ function App() {
         // Try to infer agent from the file being operated on
         if (payload.data) {
           const inferred = inferAgentFromToolCall(payload.data.args);
-          if (inferred) setActiveAgent(inferred);
+          if (inferred) setActiveAgent(inferred as "none" | "gitlab" | "orchestrator" | "a11y" | "security" | "performance");
         }
         break;
       case 'tool:result':
