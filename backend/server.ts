@@ -44,12 +44,10 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'healthy' });
 });
 
-// Start Server only if not required as a module (e.g., in tests)
-if (require.main === module) {
-    httpServer.listen(PORT, () => {
-        console.log(`[Backend] AccessOps Agent server running on port ${PORT}`);
-        console.log(`[Backend] Waiting for GitLab webhooks at /api/webhook`);
-    });
-}
+// Start Server
+httpServer.listen(PORT as number, '0.0.0.0', () => {
+    console.log(`[Backend] AccessOps Agent server running on port ${PORT}`);
+    console.log(`[Backend] Waiting for GitLab webhooks at /api/webhook`);
+});
 
 export { app };
