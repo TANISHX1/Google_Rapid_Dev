@@ -23,3 +23,10 @@ sample-test-code/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Secrets and Configuration
+config.json
+google_credentials.json
+google_token.json
+# Unnecessary test script
+backend/testGoogleWorkspace.ts
