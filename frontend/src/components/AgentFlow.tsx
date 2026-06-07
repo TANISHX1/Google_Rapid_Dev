@@ -2,7 +2,6 @@ import { memo, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
-  Controls,
   useNodesState,
   useEdgesState,
   Handle,
@@ -14,7 +13,7 @@ import { Brain, Eye, Shield, Zap, GitBranch, CheckCircle } from 'lucide-react';
 
 interface AgentFlowProps {
   activeAgent: 'none' | 'gitlab' | 'orchestrator' | 'a11y' | 'security' | 'performance';
-  workflowState: 'idle' | 'running' | 'completed';
+  workflowState: 'idle' | 'running' | 'completed' | 'failed';
 }
 
 interface AgentNodeData extends Record<string, unknown> {
@@ -100,20 +99,20 @@ const EDGE_AGENT_MAP: Record<string, string> = {
 };
 
 const INITIAL_NODES = [
-  { id: 'orchestrator', type: 'agentNode', position: { x: 250, y: 0 }, data: { label: 'Orchestrator', agentType: 'orchestrator', isActive: false, isCompleted: false } },
-  { id: 'a11y', type: 'agentNode', position: { x: 50, y: 180 }, data: { label: 'A11y Agent', agentType: 'a11y', isActive: false, isCompleted: false } },
-  { id: 'security', type: 'agentNode', position: { x: 250, y: 180 }, data: { label: 'Security Agent', agentType: 'security', isActive: false, isCompleted: false } },
-  { id: 'performance', type: 'agentNode', position: { x: 450, y: 180 }, data: { label: 'Performance Agent', agentType: 'performance', isActive: false, isCompleted: false } },
-  { id: 'gitlab', type: 'agentNode', position: { x: 250, y: 360 }, data: { label: 'GitLab', agentType: 'gitlab', isActive: false, isCompleted: false } },
+  { id: 'orchestrator', type: 'agentNode', position: { x: 200, y: 0 }, data: { label: 'Orchestrator', agentType: 'orchestrator', isActive: false, isCompleted: false } },
+  { id: 'a11y', type: 'agentNode', position: { x: 0, y: 95 }, data: { label: 'A11y Agent', agentType: 'a11y', isActive: false, isCompleted: false } },
+  { id: 'security', type: 'agentNode', position: { x: 200, y: 95 }, data: { label: 'Security Agent', agentType: 'security', isActive: false, isCompleted: false } },
+  { id: 'performance', type: 'agentNode', position: { x: 400, y: 95 }, data: { label: 'Performance Agent', agentType: 'performance', isActive: false, isCompleted: false } },
+  { id: 'gitlab', type: 'agentNode', position: { x: 200, y: 190 }, data: { label: 'GitLab', agentType: 'gitlab', isActive: false, isCompleted: false } },
 ];
 
 const INITIAL_EDGES = [
-  { id: 'e1', source: 'orchestrator', target: 'a11y', type: 'smoothstep' },
-  { id: 'e2', source: 'orchestrator', target: 'security', type: 'smoothstep' },
-  { id: 'e3', source: 'orchestrator', target: 'performance', type: 'smoothstep' },
-  { id: 'e4', source: 'a11y', target: 'gitlab', type: 'smoothstep' },
-  { id: 'e5', source: 'security', target: 'gitlab', type: 'smoothstep' },
-  { id: 'e6', source: 'performance', target: 'gitlab', type: 'smoothstep' },
+  { id: 'e1', source: 'orchestrator', target: 'a11y' },
+  { id: 'e2', source: 'orchestrator', target: 'security' },
+  { id: 'e3', source: 'orchestrator', target: 'performance' },
+  { id: 'e4', source: 'a11y', target: 'gitlab' },
+  { id: 'e5', source: 'security', target: 'gitlab' },
+  { id: 'e6', source: 'performance', target: 'gitlab' },
 ];
 
 export function AgentFlow({ activeAgent, workflowState }: AgentFlowProps) {
@@ -160,24 +159,27 @@ export function AgentFlow({ activeAgent, workflowState }: AgentFlowProps) {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.5}
-          maxZoom={2}
-          panOnDrag
-          zoomOnScroll
+          fitViewOptions={{ padding: 0.12 }}
+          minZoom={1}
+          maxZoom={1}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          panOnScroll={false}
+          preventScrolling={true}
           selectNodesOnDrag={false}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
         >
           <Background color="rgba(255,255,255,0.03)" gap={24} size={1} />
-          <Controls showInteractive={false} />
         </ReactFlow>
         {workflowState === 'completed' && (
           <div style={{
-            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', bottom: 16, right: 16,
             background: 'rgba(46,204,113,0.12)', border: '1px solid rgba(46,204,113,0.3)',
-            borderRadius: '8px', padding: '8px 16px',
+            borderRadius: '4px', padding: '8px 16px',
             fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem',
             color: '#2ecc71', display: 'flex', alignItems: 'center', gap: '6px',
             pointerEvents: 'none', zIndex: 5,
