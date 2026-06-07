@@ -100,20 +100,20 @@ const EDGE_AGENT_MAP: Record<string, string> = {
 };
 
 const INITIAL_NODES = [
-  { id: 'orchestrator', type: 'agentNode', position: { x: 250, y: 0 }, data: { label: 'Orchestrator', agentType: 'orchestrator', isActive: false, isCompleted: false } },
-  { id: 'a11y', type: 'agentNode', position: { x: 50, y: 180 }, data: { label: 'A11y Agent', agentType: 'a11y', isActive: false, isCompleted: false } },
-  { id: 'security', type: 'agentNode', position: { x: 250, y: 180 }, data: { label: 'Security Agent', agentType: 'security', isActive: false, isCompleted: false } },
-  { id: 'performance', type: 'agentNode', position: { x: 450, y: 180 }, data: { label: 'Performance Agent', agentType: 'performance', isActive: false, isCompleted: false } },
-  { id: 'gitlab', type: 'agentNode', position: { x: 250, y: 360 }, data: { label: 'GitLab', agentType: 'gitlab', isActive: false, isCompleted: false } },
+  { id: 'orchestrator', type: 'agentNode', position: { x: 200, y: 0 }, data: { label: 'Orchestrator', agentType: 'orchestrator', isActive: false, isCompleted: false } },
+  { id: 'a11y', type: 'agentNode', position: { x: 0, y: 95 }, data: { label: 'A11y Agent', agentType: 'a11y', isActive: false, isCompleted: false } },
+  { id: 'security', type: 'agentNode', position: { x: 200, y: 95 }, data: { label: 'Security Agent', agentType: 'security', isActive: false, isCompleted: false } },
+  { id: 'performance', type: 'agentNode', position: { x: 400, y: 95 }, data: { label: 'Performance Agent', agentType: 'performance', isActive: false, isCompleted: false } },
+  { id: 'gitlab', type: 'agentNode', position: { x: 200, y: 190 }, data: { label: 'GitLab', agentType: 'gitlab', isActive: false, isCompleted: false } },
 ];
 
 const INITIAL_EDGES = [
-  { id: 'e1', source: 'orchestrator', target: 'a11y', type: 'smoothstep' },
-  { id: 'e2', source: 'orchestrator', target: 'security', type: 'smoothstep' },
-  { id: 'e3', source: 'orchestrator', target: 'performance', type: 'smoothstep' },
-  { id: 'e4', source: 'a11y', target: 'gitlab', type: 'smoothstep' },
-  { id: 'e5', source: 'security', target: 'gitlab', type: 'smoothstep' },
-  { id: 'e6', source: 'performance', target: 'gitlab', type: 'smoothstep' },
+  { id: 'e1', source: 'orchestrator', target: 'a11y' },
+  { id: 'e2', source: 'orchestrator', target: 'security' },
+  { id: 'e3', source: 'orchestrator', target: 'performance' },
+  { id: 'e4', source: 'a11y', target: 'gitlab' },
+  { id: 'e5', source: 'security', target: 'gitlab' },
+  { id: 'e6', source: 'performance', target: 'gitlab' },
 ];
 
 export function AgentFlow({ activeAgent, workflowState }: AgentFlowProps) {
@@ -160,7 +160,7 @@ export function AgentFlow({ activeAgent, workflowState }: AgentFlowProps) {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
+          fitViewOptions={{ padding: 0.12 }}
           minZoom={0.5}
           maxZoom={2}
           panOnDrag

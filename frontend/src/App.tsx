@@ -57,7 +57,6 @@ function App() {
     modified: string;
   } | null>(null);
   const [showIntegrationsModal, setShowIntegrationsModal] = useState(false);
-  const [secondaryView, setSecondaryView] = useState<'flow' | 'graph'>('flow');
   const [integrations, setIntegrations] = useState<{
     gitlab: { connected: boolean; token: string; projectId: string };
     google: { connected: boolean; clientEmail: string; sheetId: string; docId: string };
@@ -289,7 +288,7 @@ function App() {
       <div className="ambient-glow-3"></div>
 
       {/* 1. Header Bar */}
-      <header className="dashboard-header">
+      <header className="dashboard-header" style={{ border: 'none', boxShadow: 'none', outline: 'none', borderRadius: 0 }}>
         <div className="brand-section">
           <div className="brand-logo" />
           <div className="brand-info">
@@ -325,19 +324,19 @@ function App() {
       <main className="dashboard-grid">
         {/* Panel A: Live Agent Log Stream */}
         <section className="glass-panel">
-          <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+          <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid var(--border-solid)' }}>
             <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="panel-title" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '1px' }}>
+              <div className="panel-title" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Terminal size={14} style={{ color: 'var(--accent-cyan)' }} /> Agent Thought Stream
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-solid)', padding: '1px 6px', borderRadius: '3px', fontFamily: 'JetBrains Mono', fontWeight: 500 }}>
+                  TOOLS: {toolCallCount}
+                </span>
               </div>
               {workflowState === 'running' && (
                 <span className="live-status-pulse" style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontFamily: 'JetBrains Mono', fontWeight: 600 }}>
                   AUDITING
                 </span>
               )}
-            </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-              Live cognitive execution pipeline of SRE agent workflow. {activeAgent !== 'none' && `[Active: ${activeAgent.toUpperCase()}]`} [Tool Calls: {toolCallCount}]
             </div>
           </div>
 
@@ -373,7 +372,7 @@ function App() {
         <div className="workspace-column">
           {/* Panel B: GitLab Activity Cockpit */}
           <section className={`glass-panel gitlab-cockpit-panel ${isDiffExpanded ? 'collapsed' : ''}`}>
-            <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid var(--border-solid)' }}>
               <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="panel-title" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '1px' }}>
                   <GitBranch size={14} style={{ color: 'var(--accent-purple)' }} /> GitLab Workspace Cockpit
@@ -403,9 +402,6 @@ function App() {
                     <CheckCircle size={10} /> Connected
                   </span>
                 </div>
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                Connected repository metadata, activity stream, and commit timelines.
               </div>
             </div>
 
@@ -470,42 +466,12 @@ function App() {
 
           {/* Panel C: Monaco Diff Code Editor / File Network Graph */}
           <section className={`glass-panel diff-editor-panel ${isDiffExpanded ? 'expanded' : ''}`}>
-            <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', cursor: 'pointer' }} onClick={() => setIsDiffExpanded(!isDiffExpanded)}>
+            <div className="panel-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', borderBottom: '1px solid var(--border-solid)', cursor: 'pointer' }} onClick={() => setIsDiffExpanded(!isDiffExpanded)}>
               <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="panel-title" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '1px' }}>
-                  <Code2 size={14} style={{ color: 'var(--accent-purple)' }} /> {showDiffViewer ? 'Remediation Diff Viewer' : secondaryView === 'flow' ? 'Agent Flow Visualization' : 'Repository File Network Graph'}
+                  <Code2 size={14} style={{ color: 'var(--accent-purple)' }} /> {showDiffViewer ? 'Remediation Diff Viewer' : 'System Operations & Architecture'}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {!showDiffViewer && (
-                    <>
-                      <button
-                        aria-label="View agent flow visualization"
-                        onClick={() => setSecondaryView('flow')}
-                        style={{
-                          background: secondaryView === 'flow' ? 'rgba(166, 99, 204, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                          border: secondaryView === 'flow' ? '1px solid rgba(166, 99, 204, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                          color: secondaryView === 'flow' ? 'var(--accent-purple)' : 'var(--text-muted)',
-                          padding: '4px 10px', borderRadius: '4px', fontSize: '0.68rem', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s',
-                        }}
-                      >
-                        <Brain size={12} /> Agent Flow
-                      </button>
-                      <button
-                        aria-label="View repository file graph"
-                        onClick={() => setSecondaryView('graph')}
-                        style={{
-                          background: secondaryView === 'graph' ? 'rgba(166, 99, 204, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                          border: secondaryView === 'graph' ? '1px solid rgba(166, 99, 204, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                          color: secondaryView === 'graph' ? 'var(--accent-purple)' : 'var(--text-muted)',
-                          padding: '4px 10px', borderRadius: '4px', fontSize: '0.68rem', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s',
-                        }}
-                      >
-                        <Network size={12} /> File Graph
-                      </button>
-                    </>
-                  )}
                   {showDiffViewer && (
                     <button
                       aria-label="Back to visualization views"
@@ -520,7 +486,7 @@ function App() {
                     </button>
                   )}
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono', marginLeft: '4px' }}>
-                    {showDiffViewer ? (currentDiff ? currentDiff.filename : 'Loading...') : secondaryView === 'flow' ? 'Live Agent Topology' : 'Directory Structure'}
+                    {showDiffViewer ? (currentDiff ? currentDiff.filename : 'Loading...') : 'Live Operations'}
                   </span>
                   <button
                     aria-label={isDiffExpanded ? "Minimize panel" : "Maximize panel"}
@@ -534,9 +500,6 @@ function App() {
                     {isDiffExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                   </button>
                 </div>
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                {showDiffViewer ? 'Side-by-side comparison of auto-remediated code changes.' : secondaryView === 'flow' ? 'Live graph of agent orchestration and task delegation.' : 'Interactive topology of repository directory structure and module relations.'}
               </div>
             </div>
 
@@ -574,13 +537,24 @@ function App() {
                   </div>
                 )}
               </div>
-            ) : secondaryView === 'flow' ? (
-              <div className="editor-workspace" style={{ padding: 0, height: 'calc(100% - 40px)' }}>
-                <AgentFlow activeAgent={activeAgent} workflowState={workflowState} />
-              </div>
             ) : (
-              <div className="editor-workspace" style={{ padding: 0, height: 'calc(100% - 40px)' }}>
-                <RepoFileGraph files={gitlabInfo.files} visible={secondaryView === 'graph' && !showDiffViewer} />
+              <div className="editor-workspace" style={{ display: 'flex', gap: '0', height: 'calc(100% - 40px)', padding: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative', borderRight: '1px solid var(--border-solid)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid var(--border-solid)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent-cyan)', letterSpacing: '0.5px' }}>
+                    <Brain size={12} /> AGENT WORKFLOW TOPOLOGY
+                  </div>
+                  <div style={{ height: 'calc(100% - 29px)' }}>
+                    <AgentFlow activeAgent={activeAgent} workflowState={workflowState} />
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid var(--border-solid)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--accent-purple)', letterSpacing: '0.5px' }}>
+                    <Network size={12} /> REPOSITORY FILE GRAPH
+                  </div>
+                  <div style={{ height: 'calc(100% - 29px)' }}>
+                    <RepoFileGraph files={gitlabInfo.files} visible={!showDiffViewer} />
+                  </div>
+                </div>
               </div>
             )}</section>
         </div>
