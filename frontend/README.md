@@ -1,73 +1,28 @@
-# React + TypeScript + Vite
+# AccessOps Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend for AccessOps is a highly visual, real-time "God-Mode" dashboard designed to monitor the Multi-Agent Orchestrator. 
 
-Currently, two official plugins are available:
+It is built using React 19, Vite, and bespoke Vanilla CSS implementing a modern Glassmorphism aesthetic without relying on Tailwind.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- **AgentFlow Visualization:** Uses `React Flow` to render the Orchestrator delegating tasks to sub-agents in real-time.
+- **CommitGraph:** Plugs into GitLab telemetry to plot interactive, branch-aware git history swimlanes.
+- **Monaco Diff Editor:** Streams the AI's exact code fixes directly into a side-by-side IDE view.
+- **Live Metrics:** Calculates and renders the exact Tokens Saved and Developer Hours recouped per action.
+- **Vite/Nginx Reverse Proxy:** Resolves CORS constraints by routing `/api` and `/socket.io` through a single relative path.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Local Development
 
-## Expanding the ESLint configuration
+If you are running the backend on `http://localhost:3000`, the Vite proxy will automatically route all WebSocket and API traffic securely.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. Ensure dependencies are installed:
+   ```bash
+   npm install
+   ```
+2. Start the Vite dev server:
+   ```bash
+   npm run dev
+   ```
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+*Note: You do not need a `.env` file in the frontend. All credentials and target repositories are configured dynamically at runtime using the top-right Settings (IntegrationsModal) button.*

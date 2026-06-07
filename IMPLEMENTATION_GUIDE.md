@@ -1,32 +1,45 @@
-# AccessOps - Future Implementation Plan & Roadmap
+# AccessOps - Implementation Plan & Roadmap
 
-This document outlines the implementation plan for the coming days of the hackathon and the long-term vision for AccessOps as it scales into an enterprise-grade AI suite.
+This document outlines the historical implementation milestones achieved during the hackathon and the long-term vision for AccessOps as it scales into an enterprise-grade AI suite.
 
-## Immediate Hackathon Roadmap (Next 7 Days)
+## Completed Hackathon Achievements
 
-### Phase 2: The "God-Mode" Dashboard (Frontend Overhaul)
-**Goal:** Transform the simple streaming terminal into a visually stunning, highly interactive control center.
-*   **Monaco Editor Integration:** Embed VS Code's editor engine into the React dashboard. When an agent fixes code, the dashboard will display a live side-by-side diff (Before/After) of the code being modified.
-*   **Agent Flow Visualization:** Integrate `React Flow` to render a live, breathing node graph. Users will see the Orchestrator node physically passing tasks to the A11y, Security, and Performance sub-agent nodes.
-*   **Metrics Widget:** Track metrics such as "Violations Fixed," "Tokens Saved," and "Time Saved," demonstrating real ROI to the judges.
+### Phase 2: The "God-Mode" Dashboard
+The frontend was completely overhauled from a simple streaming terminal into a visually stunning, highly interactive control center.
+*   **AgentFlow:** Implemented `React Flow` with a 5-node architecture visualizing the Orchestrator delegating tasks to the A11y, Security, and Performance sub-agents.
+*   **CommitGraph:** Renders interactive, branch-aware repository timelines pulling live telemetry.
+*   **Structured Events:** Transitioned from generic string logs to strongly typed WebSockets (`workflow:start`, `tool:call`, `tool:result`), allowing precise state management across the UI.
 
-### Phase 3: RAG & Google Workspace Integration
-**Goal:** Give the agents persistent memory and automated reporting capabilities.
-*   **Pinecone / Vector DB:** Integrate a vector database to store the full WCAG 2.1 AA guidelines. The agents will perform RAG (Retrieval-Augmented Generation) to ground their fixes in official documentation, reducing hallucinations.
-*   **Google Docs/Sheets API:** After an MR is merged, automatically generate an "Accessibility Compliance Report" in Google Docs, detailing what was audited and fixed, and log the metrics into a Google Sheet for project managers.
+### Phase: Self-Trigger Prevention & Guardrails
+A massive engineering effort was dedicated to ensuring the agent operates safely without destroying repositories in infinite loops.
+*   **Layer 1 Webhook Guards:** Dropping incoming payloads if the author matches the `rapid-dev-agent`.
+*   **Layer 2 Service Guards:** Deep commit history introspection to ensure the agent does not trigger a new loop on its own `[AccessOps]` prefixed commits.
+
+### Phase: Live Metrics & ROI Display
+*   Integrated a live metrics widget on the dashboard that dynamically updates tokens saved and developer hours recouped as the agent finishes workflows.
+
+### Phase: Polishing & Bug Fixes
+*   **Vite Proxy & Socket Singleton:** Implemented relative routing via Nginx/Vite proxies, eliminating CORS errors and ensuring only a single WebSocket connection is maintained.
+*   **TimeAgo Guard:** Patched a race condition where GitLab webhooks fired twice in rapid succession.
+*   **Mobile CSS:** Polished the glassmorphism grid to be responsive.
+
+### Phase 3: Telemetry & Google Workspace Integration
+Agents were granted persistent memory and automated reporting capabilities via secure JWT Service Accounts.
+*   **IntegrationsModal UI:** Built a dynamic React portal to safely bind GitLab and Google Workspace credentials at runtime.
+*   **Google Docs/Sheets API:** After an MR is merged, the backend securely generates an "Accessibility Compliance Report" in Google Docs and logs ROI metrics into a formatted Google Sheet.
 
 ---
 
-## Long-Term Vision (Post-Hackathon Enterprise Scale)
+## Long-Term Vision (Deferred Post-Hackathon Enterprise Scale)
 
-### 1. Cross-Platform Integrations
-Currently, the system is deeply integrated with the GitLab MCP server. Future iterations will abstract the source control layer to support:
-*   GitHub (via GitHub MCP)
-*   Bitbucket
-*   Azure DevOps
+### 1. RAG & Vector Database Context (Pinecone)
+Integrate a vector database to store the full WCAG 2.1 AA guidelines and the company's internal design system guidelines. 
 
-### 2. Multi-Modal Agents
-Upgrade the agents to use Gemini's multi-modal capabilities. Instead of just reading the DOM structure, the agent could spin up a headless browser (like Puppeteer), take a screenshot of the rendered UI, and analyze the *visual* color contrast, font legibility, and layout directly from the image.
+### 2. Cross-Platform Integrations
+Currently, the system is deeply integrated with the GitLab MCP server and GitLab REST API fallbacks. Future iterations will abstract the source control layer to support GitHub and Bitbucket.
 
-### 3. "Self-Healing" CI/CD Pipelines
-Move beyond Merge Requests. The agent could hook directly into the CI/CD pipeline (e.g., GitLab CI). If an E2E test (like Cypress or Playwright) fails due to a missing `data-testid` or a broken locator, the agent intercepts the failure log, finds the source code, fixes the locator, and restarts the pipeline automatically.
+### 3. Multi-Modal Agents
+Upgrade the agents to use Gemini's multi-modal capabilities by spinning up headless browsers (Puppeteer) to take screenshots of the rendered UI and analyze *visual* color contrast directly from the image.
+
+### 4. "Self-Healing" CI/CD Pipelines
+Move beyond Merge Requests. The agent could hook directly into the CI/CD pipeline (e.g., GitLab CI). If an E2E test fails, the agent intercepts the failure log, finds the source code, fixes the locator, and restarts the pipeline automatically.
