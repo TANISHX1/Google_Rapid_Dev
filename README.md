@@ -39,17 +39,17 @@ The sub-agents autonomously write fixes, push a consolidated commit directly to 
 
 ```mermaid
 graph LR
-    Dev([Developer]) -->|Opens MR| GL[GitLab Webhook]
-    GL -->|Trigger| Backend[Node.js Backend<br/>(Cloud Run)]
+    Dev(["Developer"]) -->|Opens MR| GL["GitLab Webhook"]
+    GL -->|Trigger| Backend["Node.js Backend<br/>(Cloud Run)"]
     
     subgraph Frontend Client
-        Vite[Vite Proxy / Nginx] -->|WebSocket: workflow:start,<br/>tool:call, workflow:complete| Dash[React Dashboard<br/>AgentFlow & CommitGraph]
+        Vite["Vite Proxy / Nginx"] -->|"WebSocket: workflow:start,<br/>tool:call, workflow:complete"| Dash["React Dashboard<br/>AgentFlow & CommitGraph"]
     end
     
     Backend <-->|Socket.io| Vite
-    Backend <-->|Tool Calls| Gemini[Gemini 2.5 Pro<br/>Orchestrator]
-    Gemini -->|Sub-Agents| GL_API[(GitLab REST API & MCP)]
-    Backend -->|JWT Auth| Workspace[Google Docs & Sheets<br/>Compliance Reports]
+    Backend <-->|Tool Calls| Gemini["Gemini 2.5 Pro<br/>Orchestrator"]
+    Gemini -->|Sub-Agents| GL_API[("GitLab REST API & MCP")]
+    Backend -->|JWT Auth| Workspace["Google Docs & Sheets<br/>Compliance Reports"]
 ```
 
 ## Local Setup
