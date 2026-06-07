@@ -2,7 +2,6 @@ import { memo, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
-  Controls,
   useNodesState,
   useEdgesState,
   Handle,
@@ -14,7 +13,7 @@ import { Brain, Eye, Shield, Zap, GitBranch, CheckCircle } from 'lucide-react';
 
 interface AgentFlowProps {
   activeAgent: 'none' | 'gitlab' | 'orchestrator' | 'a11y' | 'security' | 'performance';
-  workflowState: 'idle' | 'running' | 'completed';
+  workflowState: 'idle' | 'running' | 'completed' | 'failed';
 }
 
 interface AgentNodeData extends Record<string, unknown> {
@@ -161,23 +160,26 @@ export function AgentFlow({ activeAgent, workflowState }: AgentFlowProps) {
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.12 }}
-          minZoom={0.5}
-          maxZoom={2}
-          panOnDrag
-          zoomOnScroll
+          minZoom={1}
+          maxZoom={1}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          panOnScroll={false}
+          preventScrolling={true}
           selectNodesOnDrag={false}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
         >
           <Background color="rgba(255,255,255,0.03)" gap={24} size={1} />
-          <Controls showInteractive={false} />
         </ReactFlow>
         {workflowState === 'completed' && (
           <div style={{
-            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', bottom: 16, right: 16,
             background: 'rgba(46,204,113,0.12)', border: '1px solid rgba(46,204,113,0.3)',
-            borderRadius: '8px', padding: '8px 16px',
+            borderRadius: '4px', padding: '8px 16px',
             fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem',
             color: '#2ecc71', display: 'flex', alignItems: 'center', gap: '6px',
             pointerEvents: 'none', zIndex: 5,

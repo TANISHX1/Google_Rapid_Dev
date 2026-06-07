@@ -319,6 +319,11 @@ body {
   color: var(--accent-orange);
 }
 
+.log-entry.error {
+  color: #ff8a8a;
+}
+
+
 /* React Flow Panel */
 .flow-container {
   flex: 1;

@@ -40,7 +40,9 @@ async function gitlabApi(path: string, method: string = 'GET', body?: any) {
     });
     
     if (!response.ok) {
-        throw new Error(`GitLab API error: ${response.statusText} on ${url}`);
+        let errorText = '';
+        try { errorText = await response.text(); } catch (e) {}
+        throw new Error(`GitLab API error: ${response.statusText} on ${url} - ${errorText}`);
     }
     return response.json();
 }
@@ -196,6 +198,12 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                                 file_path: act.file_path || act.filePath,
                                 content: act.content || act.newContent
                             }));
+                        } else if (args.files && Array.isArray(args.files)) {
+                            commitActions = args.files.map((file: any) => ({
+                                action: 'update',
+                                file_path: file.file_path || file.filePath,
+                                content: file.content || file.newContent
+                            }));
                         } else {
                             commitActions = [{
                                 action: 'update',
@@ -204,11 +212,14 @@ export const triggerAgentWorkflow = async (projectId: number, mrId: number) => {
                             }];
                         }
 
-                        await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', {
-                            branch: args.branch || args.ref || sourceBranch,
+                        const commitPayload = {
+                            branch: args.branch || args.ref || args.branch_name || sourceBranch,
                             commit_message: args.commit_message || 'AccessOps: Auto-Remediation',
                             actions: commitActions
-                        });
+                        };
+                        console.log('[DEBUG] Commit Payload:', JSON.stringify(commitPayload, null, 2));
+
+                        await gitlabApi(`/projects/${projectId}/repository/commits`, 'POST', commitPayload);
                         result = { output: 'Files committed successfully.' };
                     } else {
                         // Normalize arguments for the MCP server

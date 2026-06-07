@@ -24,7 +24,96 @@ import { AgentFlow } from './components/AgentFlow';
 import { IntegrationsModal } from './components/IntegrationsModal';
 import { CommitGraph } from './components/CommitGraph';
 import './index.css';
+// Helper to parse and render colored log messages
+const renderLogContent = (log: string) => {
+  const bracketRegex = /^\[([^\]]+)\]/;
+  const match = log.match(bracketRegex);
 
+  let prefix = '';
+  let rest = log;
+
+  if (match) {
+    prefix = match[1];
+    rest = log.substring(match[0].length).trim();
+  }
+
+  const isError = /error|failed|exception/i.test(log);
+  const isWarning = /warning|warn|critical|danger/i.test(log);
+  const isSuccess = /success|completed|successfully|done/i.test(log);
+  const isTool = /calling tool|requested|called tool|tool call/i.test(log);
+
+  const elements: React.ReactNode[] = [];
+
+  if (prefix) {
+    let prefixColor = '#A663CC'; // default purple for orchestrator
+    const pLower = prefix.toLowerCase();
+    if (pLower.includes('orchestrator')) prefixColor = '#A663CC';
+    else if (pLower.includes('a11y')) prefixColor = '#2ecc71';
+    else if (pLower.includes('security')) prefixColor = '#d63031';
+    else if (pLower.includes('performance')) prefixColor = '#00bcd4';
+    else if (pLower.includes('gitlab')) prefixColor = '#f39c12';
+
+    elements.push(
+      <span key="prefix" style={{ color: prefixColor, fontWeight: 700, marginRight: '6px' }}>
+        [{prefix}]
+      </span>
+    );
+  }
+
+  if (isError) {
+    elements.push(
+      <span key="error-badge" style={{ color: '#e74c3c', fontWeight: 700, marginRight: '6px' }}>
+        [Error]
+      </span>
+    );
+  } else if (isWarning) {
+    elements.push(
+      <span key="warning-badge" style={{ color: '#f1c40f', fontWeight: 700, marginRight: '6px' }}>
+        [Warning]
+      </span>
+    );
+  } else if (isSuccess) {
+    elements.push(
+      <span key="success-badge" style={{ color: '#2ecc71', fontWeight: 700, marginRight: '6px' }}>
+        [Success]
+      </span>
+    );
+  } else if (isTool) {
+    elements.push(
+      <span key="tool-badge" style={{ color: '#3498db', fontWeight: 700, marginRight: '6px' }}>
+        [Tool]
+      </span>
+    );
+  }
+
+  let contentColor = '#ffffff';
+  if (isError) {
+    contentColor = '#ff8a8a';
+  } else if (isWarning) {
+    contentColor = '#ffeaa7';
+  } else if (isSuccess) {
+    contentColor = '#c2f0c2';
+  } else if (isTool) {
+    contentColor = '#bce3ff';
+  }
+
+  // Strip redundant leading "Warning:" or "Error:" from the message
+  let cleanRest = rest;
+  if (isWarning) {
+    cleanRest = cleanRest.replace(/^(warning:|warning)\s*/i, '');
+  }
+  if (isError) {
+    cleanRest = cleanRest.replace(/^(error:|error|failed:|failed)\s*/i, '');
+  }
+
+  elements.push(
+    <span key="content" style={{ color: contentColor }}>
+      {cleanRest}
+    </span>
+  );
+
+  return <>{elements}</>;
+};
 
 // Dynamic source diffs are fetched in real-time from the GitLab API.
 
@@ -35,7 +124,7 @@ function App() {
     'Awaiting GitLab Webhook events or manual Trigger sequence...'
   ]);
   const [activeAgent, setActiveAgent] = useState<'none' | 'gitlab' | 'orchestrator' | 'a11y' | 'security' | 'performance'>('none');
-  const [workflowState, setWorkflowState] = useState<'idle' | 'running' | 'completed'>('idle');
+  const [workflowState, setWorkflowState] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
 
   // ROI / Audit Statistics
   const [metrics, setMetrics] = useState({
@@ -247,7 +336,7 @@ function App() {
         break;
       case 'workflow:error':
         setActiveAgent('none');
-        setWorkflowState('completed');
+        setWorkflowState('failed');
         break;
     }
   };
@@ -345,10 +434,12 @@ function App() {
               const isTrigger = log.includes('Triggering');
               const isTool = log.includes('called tool');
               const isSuccess = log.includes('completed') || log.includes('successfully');
-              const isWarning = log.includes('Warning:') || log.includes('Critical:') || log.includes('Danger:');
+              const isWarning = log.includes('Warning:') || log.includes('Critical:') || log.includes('Danger:') || log.toLowerCase().includes('warn');
+              const isError = log.includes('failed') || log.toLowerCase().includes('error');
 
               let typeClass = 'orchestrator';
-              if (isTrigger) typeClass = 'trigger';
+              if (isError) typeClass = 'error';
+              else if (isTrigger) typeClass = 'trigger';
               else if (isTool) typeClass = 'tool';
               else if (isSuccess) typeClass = 'success';
               else if (isWarning) typeClass = 'warning';
@@ -356,7 +447,7 @@ function App() {
               return (
                 <div key={index} className={`log-entry ${typeClass}`}>
                   <span style={{ color: 'rgba(255,255,255,0.2)', marginRight: '6px' }}>➜</span>
-                  {log}
+                  {renderLogContent(log)}
                 </div>
               );
             })}
@@ -601,11 +692,11 @@ function App() {
         <div className="metric-card">
           <div className="metric-info">
             <h3>Compliance Status</h3>
-            <p style={{ color: workflowState === 'completed' ? 'var(--accent-green)' : 'inherit' }}>
-              {workflowState === 'completed' ? '100% OK' : workflowState === 'running' ? 'AUDITING' : 'AWAITING'}
+            <p style={{ color: workflowState === 'completed' ? 'var(--accent-green)' : workflowState === 'failed' ? '#e74c3c' : 'inherit' }}>
+              {workflowState === 'completed' ? '100% OK' : workflowState === 'failed' ? 'FAILED' : workflowState === 'running' ? 'AUDITING' : 'AWAITING'}
             </p>
           </div>
-          <div className="metric-icon" style={{ color: workflowState === 'completed' ? 'var(--accent-green)' : 'var(--accent-cyan)' }}>
+          <div className="metric-icon" style={{ color: workflowState === 'completed' ? 'var(--accent-green)' : workflowState === 'failed' ? '#e74c3c' : 'var(--accent-cyan)' }}>
             <GitPullRequest size={20} />
           </div>
         </div>
